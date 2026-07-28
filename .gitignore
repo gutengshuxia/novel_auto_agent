@@ -1,0 +1,51 @@
+# ===== Python =====
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+dist/
+build/
+*.egg
+.venv/
+venv/
+env/
+
+# ===== Node.js =====
+node_modules/
+front/dist/
+front/.vite/
+.npm
+
+# ===== IDE =====
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# ===== 环境变量 =====
+.env
+backend/.env
+
+# ===== 产物 =====
+output/
+*.xlsx
+cast.json
+
+# ===== 数据库 =====
+*.db
+*.sqlite3
+
+# ===== 日志 =====
+*.log
+
+# ===== 缓存 =====
+.cache/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# ===== 虚拟环境 =====
+backend/.venv/
+front/node_modules/
