@@ -4,6 +4,27 @@
 
 ---
 
+## [2026-07-29] 更新 README 文件
+
+### 修改内容
+
+同步更新两份 README，反映项目最新状态：
+
+- **根目录 README.md**
+  - 核心功能新增：任务执行线程降级、步骤可视化、结果通知、模型管理
+  - 项目结构更新：task_manager/、worker/、script_processing_worker.py
+  - 技术栈更新：Celery → ThreadPoolExecutor(默认)/Celery(可选)，多 LLM 供应商
+  - 启动流程更新：新增"配置模型"步骤，标注无需 Celery
+  - Web GUI 说明扩展：分镜提取、AI Prompt、模型管理、任务通知
+  - 文档列表新增 CHANGELOG.md
+
+- **backend/README.md**
+  - 目录结构更新：core/task_manager/、services/worker/、pipeline/
+  - 新增「任务执行系统」章节：双模式执行、9 个执行器一览、步骤可视化
+  - 新增「隐私安全」说明：.env / *.db / *.log / cast.json 不可提交
+  - 扩展说明新增任务执行器开发指引
+
+
 ## [2026-07-29] 更新架构文档：任务执行系统 + 分镜提取结果展示
 
 ### 修改内容

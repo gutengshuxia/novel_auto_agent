@@ -24,13 +24,18 @@ backend/
 │   ├── api/
 │   │   └── v1/
 │   │       ├── __init__.py # 路由聚合
-│   │       └── routes/     # 各模块路由
+│   │       └── routes/     # 各模块路由 (film/llm/studio/novel_codex)
 │   ├── core/
-│   │   └── db.py           # SQLAlchemy 引擎与 Base
-│   ├── models/             # ORM 模型
+│   │   ├── db.py           # SQLAlchemy 引擎与 Base
+│   │   ├── db_sync.py      # 同步 DB 会话（任务执行器用）
+│   │   └── task_manager/   # 任务管理器 (types/stores)
+│   ├── models/             # ORM 模型 (task/llm/studio)
 │   ├── schemas/            # Pydantic 请求/响应
 │   ├── services/           # 业务逻辑
-│   └── chains/             # LangChain PromptTemplate、LangGraph
+│   │   ├── worker/
+│   │   │   └── task_executor.py          # 任务执行基类
+│   │   └── script_processing_worker.py   # 9 个任务执行器
+│   └── pipeline/           # 6 步 LangGraph Pipeline
 ├── tests/
 ├── .env.example
 └── README.md
@@ -270,8 +275,53 @@ python -m py_compile $(rg --files app tests)
 - 异步测试统一使用 `@pytest.mark.asyncio`
 - 真实 LLM 联调前，请先执行 `uv sync --group dev`
 
+## 任务执行系统
+
+### 双模式执行
+
+异步任务（分镜提取、信息提取等）支持两种执行模式：
+
+| 模式 | 环境变量 | 说明 |
+|---|---|---|
+| **线程模式（默认）** | `TASK_EXECUTOR_MODE=thread` | ThreadPoolExecutor，无需额外进程 |
+| Celery 模式 | `TASK_EXECUTOR_MODE=celery` | 需启动 Celery worker + Redis |
+
+开发环境只需启动 uvicorn，任务自动在线程池中执行。
+
+### 任务执行器
+
+`app/services/script_processing_worker.py` 包含 9 个执行器：
+
+| 执行器 | 功能 |
+|---|---|
+| `DivideTaskExecutor` | 分镜拆分 |
+| `ExtractTaskExecutor` | 场景/角色/道具提取 |
+| `ConsistencyTaskExecutor` | 一致性检查 |
+| `OptimizeTaskExecutor` | 剧本优化 |
+| `SimplifyTaskExecutor` | 剧本简化 |
+| `PortraitTaskExecutor` | 角色肖像分析 |
+| `PropTaskExecutor` | 道具信息分析 |
+| `SceneTaskExecutor` | 场景信息分析 |
+| `CostumeTaskExecutor` | 服装信息分析 |
+
+每个执行器声明 `step_names`（3 个步骤名），基类自动在执行过程中更新 `current_step` 字段，前端轮询展示。
+
+### 步骤可视化
+
+`current_step` 字段贯穿全链路：DB → API → 前端通知弹窗。用户可实时看到"正在拆分镜头…"等步骤信息。
+
+### 隐私安全
+
+以下文件已被 `.gitignore` 排除，**绝不可提交到 Git**：
+
+- `.env` / `backend/.env` — 含 API Key
+- `*.db` / `*.sqlite3` — 数据库文件
+- `*.log` — 日志文件
+- `cast.json` — 创作数据
+
 ## 扩展说明
 
 - **数据库**：在 `app/models/` 下新增模型并继承 `Base`，在 `app/core/db.py` 中可调用 `init_db()` 建表。
 - **提示词**：在 `app/chains/prompts.py` 中增加 `PromptTemplate`。
 - **工作流**：在 `app/chains/graphs.py` 中定义 `StateGraph` 并 `compile()`，在路由中 `ainvoke` 调用。
+- **新任务执行器**：继承 `AbstractWorkerTaskExecutor`，声明 `task_kind` + `step_names`，实现 `execute()` 方法。详见 [开发指南](../docs/DEVELOPER_GUIDE.md) §20。

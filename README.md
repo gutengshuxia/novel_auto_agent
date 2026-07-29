@@ -22,6 +22,10 @@
 - **25+ 导演风格注入**: 王家卫、徐克、张艺谋等导演风格参考
 - **物理真实感增强**: 重力/惯性/发力感等专业动作描述
 - **Web GUI**: 分镜工作台一键生成 Prompt，实时进度展示
+- **任务执行线程降级**: 默认线程池模式，无需 Celery，启动 uvicorn 即可执行异步任务
+- **步骤可视化**: 任务执行过程中实时显示当前步骤（如"正在拆分镜头…"）
+- **结果通知**: 任务完成后自动弹出通知，显示产出摘要（如"成功拆分为 N 个镜头"）
+- **模型管理**: 前端添加/测试/设为默认，支持 DashScope 等多供应商
 
 ---
 
@@ -45,10 +49,14 @@ cp ../.env.example .env
 # 编辑 .env，填入 OPENAI_API_KEY
 ```
 
-### 3. 启动服务
+### 3. 配置模型
+
+启动后在前端「模型管理」页面添加 LLM 模型（如 qwen-max），并设为默认。
+
+### 4. 启动服务
 
 ```bash
-# 后端 (FastAPI)
+# 后端 (FastAPI) — 线程模式默认，无需启动 Celery
 cd backend
 source .venv/bin/activate
 uvicorn app.main:app --reload --port 8000
@@ -61,7 +69,7 @@ npm run dev
 
 访问 http://localhost:5173 进入 Web 界面。
 
-### 4. CLI 模式 (可选)
+### 5. CLI 模式 (可选)
 
 ```bash
 cd novel_auto_agent
@@ -83,18 +91,23 @@ novel_auto_agent/
 │   │   │   ├── schemas/       # Pydantic v2 数据契约
 │   │   │   ├── utils/         # LLM工厂 / Excel导出 / CastManager
 │   │   │   └── adapters/      # JellyfishAdapter 数据转换
-│   │   ├── api/               # REST API 路由
-│   │   ├── services/          # Bridge 桥接服务
+│   │   ├── api/v1/routes/     # REST API 路由 (film/llm/studio/novel_codex)
+│   │   ├── core/task_manager/ # 任务管理器 (状态/存储/类型)
+│   │   ├── services/          # Bridge + 任务执行器
+│   │   │   ├── worker/task_executor.py      # 任务执行基类
+│   │   │   └── script_processing_worker.py  # 9 个具体执行器
 │   │   ├── schemas/           # API Schema
-│   │   └── models/            # DB 模型
+│   │   └── models/            # DB 模型 (task/llm/studio)
 │   └── pyproject.toml         # 合并依赖
 ├── front/                     # React 18 + Ant Design 前端
+│   └── src/pages/aiStudio/   # 分镜工作台 (章节/分镜/模型/任务)
 ├── main.py                    # CLI 入口
 ├── data/sample_story.txt      # 示例故事
 ├── docs/                      # 文档
 │   ├── ARCHITECTURE.md        # 架构文档
 │   ├── USER_GUIDE.md          # 使用手册
-│   └── DEVELOPER_GUIDE.md     # 开发指南
+│   ├── DEVELOPER_GUIDE.md     # 开发指南
+│   └── CHANGELOG.md           # 修改日志
 └── tests/                     # Pipeline 测试
 ```
 
@@ -125,7 +138,10 @@ curl http://localhost:8000/api/v1/novel-codex/result/{task_id}
 
 ### Web GUI
 
-在分镜工作台点击 **「AI Prompt」** 按钮，自动读取当前章节数据并生成 Prompt。
+- **分镜提取**: 章节页面点击「提取分镜」，系统自动调用 LLM 拆分镜头
+- **AI Prompt 生成**: 分镜工作台点击 **「AI Prompt」** 按钮，一键生成 Prompt
+- **模型管理**: 添加/测试/设为默认模型，支持 DashScope 等多供应商
+- **任务通知**: 任务完成后自动弹出结果摘要（如"成功拆分为 12 个镜头"）
 
 ---
 
@@ -147,17 +163,19 @@ Excel 输出包含 4 个 Sheet:
 | 层 | 技术 |
 |----|------|
 | Pipeline | Python 3.11+, LangGraph, LangChain, Pydantic v2 |
-| 后端 | FastAPI, SQLAlchemy, Celery |
+| 后端 | FastAPI, SQLAlchemy, ThreadPoolExecutor (默认) / Celery (可选) |
 | 前端 | React 18, Ant Design, Zustand, Vite |
-| LLM | OpenAI GPT-4o (可切换) |
+| LLM | 多供应商支持: OpenAI / DashScope (qwen-max) / 自定义 |
+| 数据库 | SQLite (默认) / MySQL / PostgreSQL |
 
 ---
 
 ## 文档
 
-- [架构文档](./docs/ARCHITECTURE.md) — 系统拓扑、状态机、数据契约、ADR
-- [使用手册](./docs/USER_GUIDE.md) — 快速上手、进阶用法、FAQ
-- [开发指南](./docs/DEVELOPER_GUIDE.md) — 环境搭建、扩展点、测试
+- [架构文档](./docs/ARCHITECTURE.md) — 系统拓扑、状态机、数据契约、ADR、任务执行系统
+- [使用手册](./docs/USER_GUIDE.md) — 快速上手、进阶用法、分镜提取操作指引、FAQ
+- [开发指南](./docs/DEVELOPER_GUIDE.md) — 环境搭建、扩展点、任务执行器开发、隐私安全
+- [修改日志](./docs/CHANGELOG.md) — 功能演进与问题修复记录
 
 ---
 
