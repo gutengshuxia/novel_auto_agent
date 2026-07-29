@@ -59,6 +59,7 @@ export default function ModelsTab() {
   const [viewMode, setViewMode] = useState<'table' | 'card'>('table')
   const [selectedModel, setSelectedModel] = useState<ModelRead | null>(null)
   const [detailPanelOpen, setDetailPanelOpen] = useState(false)
+  const [testingModelId, setTestingModelId] = useState<string | null>(null)
   const [treeCollapsed, setTreeCollapsed] = useState(false)
   const [categoryFilter, setCategoryFilter] = useState<ModelCategoryKey | null>(null)
   const [modelModalOpen, setModelModalOpen] = useState(false)
@@ -97,6 +98,28 @@ export default function ModelsTab() {
   useEffect(() => {
     void load()
   }, [search, sortBy])
+
+  // 测试模型生成
+  const handleTestModel = async (model: ModelRead) => {
+    setTestingModelId(model.id)
+    try {
+      const resp = await fetch(`/api/v1/llm/models/${model.id}/test`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+      })
+      const json = await resp.json()
+      const data = json.data
+      if (data?.success) {
+        message.success(data.message || '测试成功')
+      } else {
+        message.error(data?.message || '测试失败，请检查模型配置')
+      }
+    } catch (err) {
+      message.error('测试失败: ' + (err instanceof Error ? err.message : '网络错误'))
+    } finally {
+      setTestingModelId(null)
+    }
+  }
 
   const modelList = useMemo(() => {
     let list = models
@@ -355,8 +378,10 @@ export default function ModelsTab() {
               size="small"
               className={TABLE_ACTION_BTN_TEST_CLASS}
               icon={<ThunderboltOutlined />}
+              loading={testingModelId === record.id}
               onClick={(e) => {
                 e.stopPropagation()
+                handleTestModel(record)
               }}
             />
           </Tooltip>
@@ -543,7 +568,14 @@ export default function ModelsTab() {
                     >
                       编辑
                     </Button>,
-                    <Button key="test" type="text" size="small" icon={<ThunderboltOutlined />}>
+                    <Button
+                      key="test"
+                      type="text"
+                      size="small"
+                      icon={<ThunderboltOutlined />}
+                      loading={testingModelId === m.id}
+                      onClick={() => handleTestModel(m)}
+                    >
                       测试生成
                     </Button>,
                     <Dropdown
@@ -641,7 +673,13 @@ export default function ModelsTab() {
                 >
                   编辑
                 </Button>
-                <Button icon={<ThunderboltOutlined />}>快速测试</Button>
+                <Button
+                  icon={<ThunderboltOutlined />}
+                  loading={testingModelId === selectedModel.id}
+                  onClick={() => handleTestModel(selectedModel)}
+                >
+                  快速测试
+                </Button>
               </Space>
             </div>
           </div>
@@ -674,7 +712,13 @@ export default function ModelsTab() {
                 >
                   编辑
                 </Button>
-                <Button icon={<ThunderboltOutlined />}>快速测试</Button>
+                <Button
+                  icon={<ThunderboltOutlined />}
+                  loading={testingModelId === selectedModel.id}
+                  onClick={() => handleTestModel(selectedModel)}
+                >
+                  快速测试
+                </Button>
               </Space>
             </div>
           </Drawer>

@@ -166,6 +166,59 @@ async def delete_provider(
     return empty_response()
 
 
+# ---------- Provider/Model Test ----------
+
+
+@router.post(
+    "/providers/{provider_id}/test",
+    response_model=ApiResponse[dict],
+    summary="测试供应商连接",
+    description="使用供应商的 API Key 和 Base URL 发送一个简单的 LLM 请求来验证连接。",
+)
+async def test_provider_connection(
+    provider_id: str,
+    db: AsyncSession = Depends(get_db),
+) -> ApiResponse[dict]:
+    """测试供应商连接是否可用。"""
+    from app.models.llm import Provider
+    from app.services.llm.test_connection import test_provider_connection_service
+
+    provider = await db.get(Provider, provider_id)
+    if not provider:
+        from fastapi import HTTPException
+        raise HTTPException(status_code=404, detail=f"Provider not found: {provider_id}")
+
+    result = await test_provider_connection_service(provider)
+    return success_response(result)
+
+
+@router.post(
+    "/models/{model_id}/test",
+    response_model=ApiResponse[dict],
+    summary="测试模型生成",
+    description="使用指定模型发送一个简单的 LLM 请求来验证生成能力。",
+)
+async def test_model_generation(
+    model_id: str,
+    db: AsyncSession = Depends(get_db),
+) -> ApiResponse[dict]:
+    """测试模型是否能正常生成。"""
+    from app.models.llm import Model, Provider
+    from app.services.llm.test_connection import test_model_connection_service
+    from fastapi import HTTPException
+
+    model = await db.get(Model, model_id)
+    if not model:
+        raise HTTPException(status_code=404, detail=f"Model not found: {model_id}")
+
+    provider = await db.get(Provider, model.provider_id)
+    if not provider:
+        raise HTTPException(status_code=404, detail=f"Provider not found for model: {model_id}")
+
+    result = await test_model_connection_service(model, provider)
+    return success_response(result)
+
+
 # ---------- Model ----------
 
 

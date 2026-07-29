@@ -142,10 +142,20 @@ export default function ProvidersTab() {
     if (!p) return
     setTestConnecting(true)
     try {
-      await new Promise((r) => setTimeout(r, 800))
-      message.success('连接成功')
-    } catch {
-      message.error('连接失败，请检查 Base URL 与 AK/SK')
+      // 调用后端真实测试接口
+      const resp = await fetch(`/api/v1/llm/providers/${p.id}/test`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+      })
+      const json = await resp.json()
+      const data = json.data
+      if (data?.success) {
+        message.success(data.message || '连接成功')
+      } else {
+        message.error(data?.message || '连接失败，请检查 Base URL 与 AK/SK')
+      }
+    } catch (err) {
+      message.error('连接失败: ' + (err instanceof Error ? err.message : '网络错误'))
     } finally {
       setTestConnecting(false)
     }
