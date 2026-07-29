@@ -260,6 +260,43 @@ celery -A app.core.celery_app worker --loglevel=info
 
 ---
 
+## [2026-07-29] 修复分镜提取失败 + 添加"设为默认模型"功能
+
+### 问题描述
+
+1. **分镜提取失败**：点击提取分镜后，任务立即失败，显示"准备分镜任务 · 进度 5%"。错误信息：`No default model configured for category=text`。
+
+2. **无默认模型设置入口**：前端模型管理页面没有"设为默认"按钮，用户添加模型后不知道需要设置默认，也没有便捷入口。
+
+### 解决思路
+
+**问题 1**：`ModelSettings` 表的 `default_text_model_id` 为 NULL。分镜提取任务通过 `build_default_text_llm_sync()` 查找默认模型，找不到就报错。解决：手动设置已添加的 `qwen-max` 模型为默认。
+
+**问题 2**：在模型管理页面的"更多"下拉菜单中添加"设为默认"选项，调用已有的 `PATCH /api/v1/llm/model-settings` 接口。
+
+### 修改内容
+
+| 文件 | 修改类型 | 说明 |
+|------|----------|------|
+| `front/src/pages/.../ModelsTab.tsx` | 功能新增 | 添加"设为默认"菜单项、`handleSetDefault` 函数、加载当前默认模型状态 |
+| 数据库 | 数据修复 | 设置 `ModelSettings.default_text_model_id` 为已添加的 qwen-max 模型 ID |
+
+### 测试结果
+
+- ✅ TypeScript 编译通过（0 errors）
+- ✅ 默认文本模型已设置为 qwen-max
+- ✅ 分镜提取任务现在可以正常执行
+
+### 使用方式
+
+在「模型管理」页面：
+1. 找到要设为默认的模型
+2. 点击操作栏的"更多"（三个点图标）
+3. 选择"设为默认"
+4. 系统会提示"已将「xxx」设为文本/图片/视频默认模型"
+
+---
+
 ---
 
 ## 格式说明

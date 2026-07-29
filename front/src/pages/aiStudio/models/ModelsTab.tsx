@@ -31,6 +31,7 @@ import {
   DownOutlined,
   RightOutlined,
   ThunderboltOutlined,
+  StarOutlined,
 } from '@ant-design/icons'
 import { LlmService } from '../../../services/generated/services/LlmService'
 import type {
@@ -38,6 +39,7 @@ import type {
   ModelCategoryKey,
   ProviderRead,
   ProviderSupportedRead,
+  ModelSettingsUpdate,
 } from '../../../services/generated'
 import {
   MODEL_CATEGORIES,
@@ -60,6 +62,7 @@ export default function ModelsTab() {
   const [selectedModel, setSelectedModel] = useState<ModelRead | null>(null)
   const [detailPanelOpen, setDetailPanelOpen] = useState(false)
   const [testingModelId, setTestingModelId] = useState<string | null>(null)
+  const [defaultModelIds, setDefaultModelIds] = useState<{ text?: string | null; image?: string | null; video?: string | null }>({})
   const [treeCollapsed, setTreeCollapsed] = useState(false)
   const [categoryFilter, setCategoryFilter] = useState<ModelCategoryKey | null>(null)
   const [modelModalOpen, setModelModalOpen] = useState(false)
@@ -87,6 +90,14 @@ export default function ModelsTab() {
       setProviders(provRes.data?.items ?? [])
       setModels(modelsRes.data?.items ?? [])
       setSupportedProviders(supportedRes.data ?? [])
+      // 加载默认模型设置
+      try {
+        const settingsRes = await LlmService.getModelSettingsApiV1LlmModelSettingsGet()
+        const s = settingsRes.data
+        if (s) {
+          setDefaultModelIds({ text: s.default_text_model_id, image: s.default_image_model_id, video: s.default_video_model_id })
+        }
+      } catch { /* ignore */ }
     } catch {
       message.error('加载失败')
     } finally {
@@ -118,6 +129,29 @@ export default function ModelsTab() {
       message.error('测试失败: ' + (err instanceof Error ? err.message : '网络错误'))
     } finally {
       setTestingModelId(null)
+    }
+  }
+
+  const handleSetDefault = async (model: ModelRead) => {
+    const cat = model.category as string
+    const fieldMap: Record<string, keyof ModelSettingsUpdate> = {
+      text: 'default_text_model_id',
+      image: 'default_image_model_id',
+      video: 'default_video_model_id',
+    }
+    const field = fieldMap[cat]
+    if (!field) {
+      message.warning('该类别不支持设为默认')
+      return
+    }
+    try {
+      const updateBody: ModelSettingsUpdate = { [field]: model.id }
+      await LlmService.updateModelSettingsApiV1LlmModelSettingsPut({ requestBody: updateBody })
+      setDefaultModelIds((prev) => ({ ...prev, [cat]: model.id }))
+      const catLabel = cat === 'text' ? '文本' : cat === 'image' ? '图片' : '视频'
+      message.success(`已将「${model.name}」设为${catLabel}默认模型`)
+    } catch {
+      message.error('设置默认模型失败')
     }
   }
 
@@ -388,6 +422,16 @@ export default function ModelsTab() {
           <Dropdown
             menu={{
               items: [
+                {
+                  key: 'set-default',
+                  label: defaultModelIds[record.category as keyof typeof defaultModelIds] === record.id ? '已是默认' : '设为默认',
+                  icon: <StarOutlined style={{ color: defaultModelIds[record.category as keyof typeof defaultModelIds] === record.id ? '#faad14' : undefined }} />,
+                  disabled: defaultModelIds[record.category as keyof typeof defaultModelIds] === record.id,
+                  onClick: ({ domEvent }) => {
+                    domEvent.stopPropagation()
+                    handleSetDefault(record)
+                  },
+                },
                 {
                   key: 'copy',
                   label: '复制',
