@@ -14,6 +14,7 @@ export interface NovelCodexGenerateParams {
   director_ids?: string[] | null
   target_models?: string[]
   enable_storyboard_cards?: boolean
+  text_model_id?: string | null
 }
 
 /** 任务启动响应 */

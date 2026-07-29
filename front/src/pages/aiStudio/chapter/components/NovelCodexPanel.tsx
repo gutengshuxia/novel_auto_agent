@@ -22,7 +22,11 @@ import {
   CloseCircleOutlined,
   LoadingOutlined,
   RobotOutlined,
+  ApiOutlined,
 } from '@ant-design/icons'
+import { Select } from 'antd'
+import { LlmService } from '../../../../services/generated/services/LlmService'
+import type { ModelRead } from '../../../../services/generated/models/ModelRead'
 import {
   generatePrompts,
   getTaskStatus,
@@ -61,6 +65,39 @@ const NovelCodexPanel: React.FC<NovelCodexPanelProps> = ({ chapterId, onComplete
   const [result, setResult] = useState<NovelCodexResultResponse | null>(null)
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const taskIdRef = useRef<string>('')
+
+  // 模型选择相关状态
+  const [textModels, setTextModels] = useState<ModelRead[]>([])
+  const [selectedModelId, setSelectedModelId] = useState<string | null>(null)
+  const [modelsLoading, setModelsLoading] = useState(false)
+
+  // 加载文本模型列表
+  useEffect(() => {
+    let cancelled = false
+    const fetchModels = async () => {
+      setModelsLoading(true)
+      try {
+        const resp = await LlmService.listModelsApiV1LlmModelsGet({
+          category: 'text',
+          pageSize: 100,
+        })
+        if (!cancelled) {
+          const models = resp.data?.items || []
+          setTextModels(models)
+          // 默认选择第一个模型
+          if (models.length > 0 && !selectedModelId) {
+            setSelectedModelId(models[0].id)
+          }
+        }
+      } catch {
+        // 忽略错误，会使用 .env 默认配置
+      } finally {
+        if (!cancelled) setModelsLoading(false)
+      }
+    }
+    fetchModels()
+    return () => { cancelled = true }
+  }, [])
 
   // 清理轮询
   const stopPolling = useCallback(() => {
@@ -108,6 +145,7 @@ const NovelCodexPanel: React.FC<NovelCodexPanelProps> = ({ chapterId, onComplete
       const resp = await generatePrompts({
         chapter_id: chapterId,
         enable_storyboard_cards: true,
+        text_model_id: selectedModelId,
       })
       taskIdRef.current = resp.data.task_id
       startPolling(resp.data.task_id)
@@ -176,6 +214,34 @@ const NovelCodexPanel: React.FC<NovelCodexPanelProps> = ({ chapterId, onComplete
         width={480}
       >
         <div className="py-4">
+          {/* 模型选择 */}
+          {!isRunning && !isDone && (
+            <div className="mb-4">
+              <div className="text-sm text-gray-600 mb-1.5 flex items-center gap-1.5">
+                <ApiOutlined />
+                选择分析模型
+              </div>
+              <Select
+                className="w-full"
+                placeholder="选择用于 Pipeline 分析的文本模型"
+                loading={modelsLoading}
+                value={selectedModelId}
+                onChange={setSelectedModelId}
+                allowClear
+                options={textModels.map((m) => ({
+                  label: m.name,
+                  value: m.id,
+                }))}
+                notFoundContent="暂无可用模型，请先在模型管理中添加"
+              />
+              {textModels.length === 0 && !modelsLoading && (
+                <div className="mt-1 text-xs text-gray-400">
+                  未选择模型时将使用 .env 默认配置
+                </div>
+              )}
+            </div>
+          )}
+
           {/* 进度条 */}
           <Progress
             percent={status?.progress ?? 0}

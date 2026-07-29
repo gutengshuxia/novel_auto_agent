@@ -47,6 +47,7 @@ async def generate_prompts(
             director_ids=body.director_ids,
             target_models=body.target_models,
             enable_cards=body.enable_storyboard_cards,
+            text_model_id=body.text_model_id,
         )
         return success_response(data={
             "task_id": task_id,

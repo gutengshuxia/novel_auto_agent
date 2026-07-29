@@ -64,6 +64,7 @@ class NovelCodexBridge:
         director_ids: list[str] | None = None,
         target_models: list[str] | None = None,
         enable_cards: bool = True,
+        text_model_id: str | None = None,
     ) -> str:
         """
         异步启动 Pipeline 生成。
@@ -141,7 +142,25 @@ class NovelCodexBridge:
                 logger.exception("Pipeline 异常: task=%s", task_id)
                 _update_task_fields(task_id, status="failed", error=str(e))
 
-        _executor.submit(_run_pipeline)
+        # 4. 如果指定了 text_model_id, 从 DB 加载模型配置并设置 Pipeline LLM 覆盖
+        llm_override_config = None
+        if text_model_id:
+            llm_override_config = await self._resolve_model_config(db, text_model_id)
+
+        def _run_pipeline_with_override():
+            try:
+                if llm_override_config:
+                    from app.pipeline.utils.llm import set_llm_override, clear_llm_override
+                    set_llm_override(**llm_override_config)
+                    logger.info("Pipeline 使用 DB 模型配置: provider=%s, model=%s",
+                                llm_override_config.get("provider_key"), llm_override_config.get("model"))
+                _run_pipeline()
+            finally:
+                if llm_override_config:
+                    from app.pipeline.utils.llm import clear_llm_override
+                    clear_llm_override()
+
+        _executor.submit(_run_pipeline_with_override)
         return task_id
 
     async def get_task_status(self, task_id: str) -> dict[str, Any]:
@@ -267,6 +286,55 @@ class NovelCodexBridge:
             "shots": shots,
             "characters": characters,
             "costumes": costumes,
+        }
+
+    async def _resolve_model_config(self, db: AsyncSession, model_id: str) -> dict[str, Any] | None:
+        """从 DB 加载模型配置, 返回 set_llm_override() 所需的参数 dict。"""
+        from app.models.llm import Model, Provider
+        from sqlalchemy import select
+
+        # 加载 model + provider
+        model = await db.get(Model, model_id)
+        if not model:
+            logger.warning("Model not found: %s, 回退到 .env 配置", model_id)
+            return None
+
+        stmt = select(Provider).where(Provider.id == model.provider_id)
+        provider = (await db.execute(stmt)).scalar_one_or_none()
+        if not provider:
+            logger.warning("Provider not found for model: %s", model_id)
+            return None
+
+        # 判断协议类型 (根据 provider name 映射)
+        provider_name = provider.name.lower()
+        protocol = "anthropic" if "claude" in provider_name or "anthropic" in provider_name else "openai"
+
+        # 映射 provider key (用于 Pipeline 的 PROVIDER_PRESETS 兼容)
+        provider_key_map = {
+            "openai": "openai", "chatgpt": "openai",
+            "deepseek": "deepseek",
+            "qwen": "qwen", "通义": "qwen", "dashscope": "qwen", "阿里": "qwen", "百炼": "qwen",
+            "zhipu": "zhipu", "智谱": "zhipu", "glm": "zhipu",
+            "kimi": "kimi", "moonshot": "kimi", "月之暗面": "kimi",
+            "doubao": "doubao", "豆包": "doubao", "火山": "doubao",
+            "yi": "yi", "零一万物": "yi",
+            "gemini": "gemini", "google": "gemini",
+            "claude": "claude", "anthropic": "claude",
+        }
+        provider_key = None
+        for alias, key in provider_key_map.items():
+            if alias in provider_name:
+                provider_key = key
+                break
+
+        return {
+            "api_key": provider.api_key,
+            "base_url": provider.base_url,
+            "model": model.name,
+            "provider_key": provider_key,
+            "protocol": protocol,
+            "temperature": model.params.get("temperature"),
+            "max_tokens": model.params.get("max_tokens"),
         }
 
     async def _write_back_results(

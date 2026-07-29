@@ -18,6 +18,10 @@ class NovelCodexGenerateRequest(BaseModel):
         True,
         description="是否同时生成故事板分镜卡片",
     )
+    text_model_id: str | None = Field(
+        None,
+        description="前端选择的文本模型 ID (来自模型管理), 不传则使用 .env 默认配置",
+    )
 
 
 class NovelCodexShotPromptRead(BaseModel):
