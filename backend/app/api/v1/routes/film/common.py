@@ -82,6 +82,7 @@ class TaskStatusRead(BaseModel):
     started_at_ts: float | None = Field(None, description="任务开始执行时间戳")
     finished_at_ts: float | None = Field(None, description="任务结束时间戳")
     elapsed_ms: int | None = Field(None, description="任务累计执行耗时（毫秒）")
+    current_step: str | None = Field(None, description="当前执行步骤描述")
 
 
 class TaskListItemRead(BaseModel):
@@ -103,6 +104,7 @@ class TaskListItemRead(BaseModel):
     resource_type: str | None = Field(None, description="资源类型")
     navigate_relation_type: str | None = Field(None, description="前端默认跳转关联类型")
     navigate_relation_entity_id: str | None = Field(None, description="前端默认跳转关联实体 ID")
+    current_step: str | None = Field(None, description="当前执行步骤描述")
 
 
 class TaskResultRead(BaseModel):

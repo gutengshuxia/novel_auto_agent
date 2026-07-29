@@ -123,6 +123,11 @@ class GenerationTask(Base, TimestampMixin):
         nullable=True,
         comment="执行器侧任务 ID，如 celery task id",
     )
+    current_step: Mapped[str | None] = mapped_column(
+        String(255),
+        nullable=True,
+        comment="当前执行步骤描述（供前端展示）",
+    )
 
     __table_args__ = (
         # 轮询高频：按 id 主键读最常见；列表/后台清理可按状态与更新时间过滤

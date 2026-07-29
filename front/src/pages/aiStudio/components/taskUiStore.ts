@@ -14,6 +14,7 @@ export type TaskUiItem = {
   startedAtTs?: number | null
   finishedAtTs?: number | null
   elapsedMs?: number | null
+  currentStep?: string | null
   relationType?: string | null
   relationEntityId?: string | null
   resourceType?: string | null
@@ -63,6 +64,7 @@ export function mergeTaskUiItems(
       startedAtTs: server?.started_at_ts ?? optimistic?.startedAtTs,
       finishedAtTs: server?.finished_at_ts ?? optimistic?.finishedAtTs,
       elapsedMs: server?.elapsed_ms ?? optimistic?.elapsedMs,
+      currentStep: server?.current_step ?? optimistic?.currentStep,
       relationType: server?.relation_type ?? optimistic?.relationType,
       relationEntityId: server?.relation_entity_id ?? optimistic?.relationEntityId,
       resourceType: server?.resource_type ?? optimistic?.resourceType,

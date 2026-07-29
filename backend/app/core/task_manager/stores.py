@@ -175,6 +175,7 @@ def _task_record_from_row(row: GenerationTask) -> TaskRecord:
         updated_at_ts=_datetime_ts(row.updated_at),
         executor_type=row.executor_type,
         executor_task_id=row.executor_task_id,
+        current_step=getattr(row, 'current_step', None),
     )
 
 
@@ -420,6 +421,7 @@ class SqlAlchemyTaskStore(TaskStore):
                 GenerationTask.started_at,
                 GenerationTask.finished_at,
                 GenerationTask.updated_at,
+                GenerationTask.current_step,
             )
             .where(GenerationTask.id == task_id)
             .limit(1)
@@ -441,6 +443,7 @@ class SqlAlchemyTaskStore(TaskStore):
             finished_at_ts=_datetime_ts(row.finished_at),
             elapsed_ms=_elapsed_ms_from_datetimes(row.started_at, row.finished_at),
             updated_at_ts=_datetime_ts(updated_at),
+            current_step=row.current_step,
         )
 
     async def list_task_views(
@@ -548,6 +551,7 @@ class SqlAlchemyTaskStore(TaskStore):
                 resource_type=link_map.get(task.id).resource_type if link_map.get(task.id) else None,
                 navigate_relation_type=navigation_map.get(task.id)[0] if navigation_map.get(task.id) else None,
                 navigate_relation_entity_id=navigation_map.get(task.id)[1] if navigation_map.get(task.id) else None,
+                current_step=getattr(task, 'current_step', None),
             )
             for task in tasks
         ], total
@@ -581,6 +585,9 @@ class SqlAlchemyTaskStore(TaskStore):
 
     async def set_executor(self, task_id: str, *, executor_type: str, executor_task_id: str | None = None) -> None:
         await self._update_columns(task_id, executor_type=executor_type, executor_task_id=executor_task_id)
+
+    async def set_current_step(self, task_id: str, current_step: str) -> None:
+        await self._update_columns(task_id, current_step=current_step)
 
     async def request_cancel(self, task_id: str, reason: str | None = None) -> Optional[TaskRecord]:
         row = await self.db.get(GenerationTask, task_id)
@@ -668,6 +675,13 @@ class SyncSqlAlchemyTaskStore:
             return
         row.executor_type = executor_type
         row.executor_task_id = executor_task_id
+        self.db.flush()
+
+    def set_current_step(self, task_id: str, current_step: str) -> None:
+        row = self.db.get(GenerationTask, task_id)
+        if row is None:
+            return
+        row.current_step = current_step
         self.db.flush()
 
     def request_cancel(self, task_id: str, reason: str | None = None) -> Optional[TaskRecord]:

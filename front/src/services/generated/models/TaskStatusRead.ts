@@ -27,5 +27,9 @@ export type TaskStatusRead = {
      * 任务累计执行耗时（毫秒）
      */
     elapsed_ms?: (number | null);
+    /**
+     * 当前执行步骤描述
+     */
+    current_step?: (string | null);
 };
 

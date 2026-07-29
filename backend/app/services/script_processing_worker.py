@@ -149,6 +149,7 @@ class ScriptSimplificationResultGenerator(AbstractLLMResultGenerator):
 class DivideTaskExecutor(AbstractWorkerTaskExecutor):
     task_kind = "script_divide"
     timeout_seconds = 1800.0
+    step_names = ["准备分镜任务", "正在拆分镜头…", "写入分镜结果"]
 
     def __init__(self) -> None:
         super().__init__(session_maker=sync_session_maker)
@@ -170,6 +171,7 @@ class DivideTaskExecutor(AbstractWorkerTaskExecutor):
 class ExtractTaskExecutor(AbstractWorkerTaskExecutor):
     task_kind = "script_extract"
     timeout_seconds = 1800.0
+    step_names = ["准备提取任务", "正在提取场景/角色/道具信息…", "写入提取结果"]
 
     def __init__(self) -> None:
         super().__init__(session_maker=sync_session_maker)
@@ -198,6 +200,7 @@ class ConsistencyTaskExecutor(AbstractWorkerTaskExecutor):
     task_kind = "script_consistency"
     succeeded_progress = 100
     timeout_seconds = 900.0
+    step_names = ["准备一致性检查", "正在检查角色混淆…", "检查完成"]
 
     def __init__(self) -> None:
         super().__init__(session_maker=sync_session_maker)
@@ -223,31 +226,37 @@ class _SimpleLLMTaskExecutor(AbstractWorkerTaskExecutor):
 class CharacterPortraitTaskExecutor(_SimpleLLMTaskExecutor):
     task_kind = "script_character_portrait"
     generator_class = CharacterPortraitResultGenerator
+    step_names = ["准备人物画像分析", "正在分析人物画像…", "分析完成"]
 
 
 class PropInfoTaskExecutor(_SimpleLLMTaskExecutor):
     task_kind = "script_prop_info"
     generator_class = PropInfoResultGenerator
+    step_names = ["准备道具信息分析", "正在分析道具信息…", "分析完成"]
 
 
 class SceneInfoTaskExecutor(_SimpleLLMTaskExecutor):
     task_kind = "script_scene_info"
     generator_class = SceneInfoResultGenerator
+    step_names = ["准备场景信息分析", "正在分析场景信息…", "分析完成"]
 
 
 class CostumeInfoTaskExecutor(_SimpleLLMTaskExecutor):
     task_kind = "script_costume_info"
     generator_class = CostumeInfoResultGenerator
+    step_names = ["准备服装信息分析", "正在分析服装信息…", "分析完成"]
 
 
 class ScriptOptimizationTaskExecutor(_SimpleLLMTaskExecutor):
     task_kind = "script_optimize"
     generator_class = ScriptOptimizationResultGenerator
+    step_names = ["准备剧本优化", "正在优化剧本…", "优化完成"]
 
 
 class ScriptSimplificationTaskExecutor(_SimpleLLMTaskExecutor):
     task_kind = "script_simplify"
     generator_class = ScriptSimplificationResultGenerator
+    step_names = ["准备剧本精简", "正在精简剧本…", "精简完成"]
 
 
 def generate_division_result(

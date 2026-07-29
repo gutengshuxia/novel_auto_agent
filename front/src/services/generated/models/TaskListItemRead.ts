@@ -67,5 +67,9 @@ export type TaskListItemRead = {
      * 前端默认跳转关联实体 ID
      */
     navigate_relation_entity_id?: (string | null);
+    /**
+     * 当前执行步骤描述
+     */
+    current_step?: (string | null);
 };
 

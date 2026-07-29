@@ -76,6 +76,7 @@ class TaskRecord:
     updated_at_ts: Optional[float] = None
     executor_type: Optional[str] = None
     executor_task_id: Optional[str] = None
+    current_step: Optional[str] = None
 
 
 @dataclass(slots=True)
@@ -93,6 +94,7 @@ class TaskStatusView:
     finished_at_ts: Optional[float] = None
     elapsed_ms: Optional[int] = None
     updated_at_ts: Optional[float] = None
+    current_step: Optional[str] = None
 
 
 @dataclass(slots=True)
@@ -117,3 +119,4 @@ class TaskListItemView:
     resource_type: Optional[str] = None
     navigate_relation_type: Optional[str] = None
     navigate_relation_entity_id: Optional[str] = None
+    current_step: Optional[str] = None

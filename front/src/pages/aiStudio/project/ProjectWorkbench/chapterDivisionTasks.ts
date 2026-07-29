@@ -20,6 +20,7 @@ export type RelationTaskState = {
   startedAtTs?: number | null
   finishedAtTs?: number | null
   elapsedMs?: number | null
+  currentStep?: string | null
 }
 
 export type ChapterDivisionTaskState = RelationTaskState
@@ -80,6 +81,7 @@ export function toRelationTaskStateFromStatusRead(
     | 'started_at_ts'
     | 'finished_at_ts'
     | 'elapsed_ms'
+    | 'current_step'
   >,
 ): RelationTaskState {
   return {
@@ -90,6 +92,7 @@ export function toRelationTaskStateFromStatusRead(
     startedAtTs: data.started_at_ts,
     finishedAtTs: data.finished_at_ts,
     elapsedMs: data.elapsed_ms,
+    currentStep: data.current_step,
   }
 }
 

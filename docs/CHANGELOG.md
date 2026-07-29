@@ -135,6 +135,131 @@ Pipeline 执行完毕 → clear_llm_override() 清理
 - 未选择模型时，Pipeline 回退到 `.env` 默认配置（向后兼容）
 - 测试接口失败时返回详细错误信息，不会导致系统崩溃
 
+## [2026-07-21] 任务执行线程降级 + 前端步骤可视化
+
+### 问题描述
+
+1. **任务无法执行**：分镜提取等异步任务依赖 Celery worker，但开发环境下用户通常只启动 FastAPI + 前端，不会单独启动 Celery。导致任务创建后一直卡在 `pending` 状态，前端显示"任务执行中"但实际什么都没做。
+
+2. **看不到执行步骤**：任务执行过程中只有 3 个进度节点（5% → 70% → 100%），没有中间步骤信息。用户无法知道当前执行到了哪一步（如"正在拆分镜头"还是"正在写入结果"）。
+
+3. **日志信息不足**：`task_logging.py` 只记录基础事件（started/succeeded/failed），缺少中间步骤日志。
+
+### 解决思路
+
+**问题 1 — 线程降级模式**：
+- `execute_task.py` 新增 `TASK_EXECUTOR_MODE` 环境变量（默认 `"thread"`）
+- 线程模式下，任务在后台线程池中直接执行，无需 Celery worker
+- 保留 Celery 模式（设置 `TASK_EXECUTOR_MODE=celery` 即可切换）
+
+**问题 2 — 步骤可视化**：
+- 给 `GenerationTask` 模型添加 `current_step` 字段（VARCHAR 255）
+- 贯穿全链路：DB → TaskRecord → TaskStatusView → API 响应 → 前端类型 → 通知组件
+- 每个执行器配置 `step_names` 列表（如 `["准备分镜任务", "正在拆分镜头…", "写入分镜结果"]`）
+- 执行器在不同阶段自动更新 `current_step`
+- 前端通知弹窗显示当前步骤名称
+
+### 修改内容
+
+#### 后端修改
+
+| 文件 | 修改类型 | 说明 |
+|------|----------|------|
+| `backend/app/models/task.py` | 字段新增 | `GenerationTask` 新增 `current_step` 列 |
+| `backend/app/core/task_manager/types.py` | 字段新增 | `TaskRecord`、`TaskStatusView`、`TaskListItemView` 新增 `current_step` 字段 |
+| `backend/app/core/task_manager/stores.py` | 方法新增 | `SqlAlchemyTaskStore` 和 `SyncSqlAlchemyTaskStore` 新增 `set_current_step()` 方法；`get_status_view()` 和 `list_task_views()` 返回 `current_step` |
+| `backend/app/api/v1/routes/film/common.py` | 字段新增 | `TaskStatusRead`、`TaskListItemRead` 新增 `current_step` 字段 |
+| `backend/app/api/v1/routes/film/task_status.py` | 透传字段 | `get_task_status` 和 `list_tasks` 端点返回 `current_step` |
+| `backend/app/services/worker/task_executor.py` | 功能增强 | 新增 `step_names` 类属性和 `_set_step()` 方法；执行阶段自动更新步骤名称 |
+| `backend/app/services/script_processing_worker.py` | 步骤配置 | 9 个执行器均配置 `step_names`（分镜/提取/一致性/人物/道具/场景/服装/优化/精简） |
+| `backend/app/tasks/execute_task.py` | 重写 | 支持线程降级模式（默认）和 Celery 模式 |
+
+#### 前端修改
+
+| 文件 | 修改类型 | 说明 |
+|------|----------|------|
+| `front/src/services/generated/models/TaskStatusRead.ts` | 字段新增 | 新增 `current_step` 可选字段 |
+| `front/src/services/generated/models/TaskListItemRead.ts` | 字段新增 | 新增 `current_step` 可选字段 |
+| `front/src/pages/.../chapterDivisionTasks.ts` | 类型扩展 | `RelationTaskState` 新增 `currentStep`；`toRelationTaskStateFromStatusRead` 映射该字段 |
+| `front/src/pages/.../components/taskUiStore.ts` | 类型扩展 | `TaskUiItem` 新增 `currentStep`；合并逻辑包含该字段 |
+| `front/src/pages/.../components/taskNotificationHelpers.tsx` | 显示增强 | 通知描述中优先显示 `currentStep`（如"正在拆分镜头… 进度 35%"） |
+
+#### 数据库变更
+
+| 操作 | SQL |
+|------|-----|
+| 新增列 | `ALTER TABLE generation_tasks ADD COLUMN current_step VARCHAR(255) DEFAULT NULL;` |
+
+### 数据流
+
+**任务执行 + 步骤可视化**：
+
+```
+前端点击「提取分镜」→ POST /divide-async → 创建任务 → enqueue_task_execution()
+                                                    ↓
+                                    线程模式：ThreadPoolExecutor 提交任务
+                                                    ↓
+                                    DivideTaskExecutor.run(task_id)
+                                        → set_current_step("准备分镜任务")     [progress=5%]
+                                        → set_current_step("正在拆分镜头…")    [progress=5-70%]
+                                        → LLM 调用 ScriptDividerAgent
+                                        → set_current_step("写入分镜结果")     [progress=70-100%]
+                                        → apply_result() 写入 DB
+                                        → set_status(succeeded)              [progress=100%]
+                                                    ↓
+前端每 2s 轮询 GET /tasks/{id}/status → 返回 {progress, current_step, status}
+                                                    ↓
+前端通知弹窗显示："正在拆分镜头… 进度 35% · 已运行 12 秒"
+```
+
+### 测试步骤
+
+1. **后端导入测试**：
+   ```bash
+   cd backend && source .venv/bin/activate
+   python -c "from app.tasks.execute_task import enqueue_task_execution; print('✅')"
+   python -c "from app.services.script_processing_worker import DivideTaskExecutor; print(DivideTaskExecutor.step_names)"
+   ```
+
+2. **前端编译测试**：
+   ```bash
+   cd front
+   npx tsc --noEmit
+   npx vite build
+   ```
+
+3. **功能测试**：
+   - 启动后端：`uvicorn app.main:app --reload --port 8000`
+   - 启动前端：`npm run dev`
+   - 在章节页面添加内容，点击「提取分镜」
+   - 观察右上角通知弹窗是否显示步骤名称和进度
+
+### 测试结果
+
+- ✅ 后端所有模块导入正常
+- ✅ `DivideTaskExecutor.step_names = ['准备分镜任务', '正在拆分镜头…', '写入分镜结果']`
+- ✅ TypeScript 编译通过（0 errors）
+- ✅ Vite 生产构建成功（3.06s）
+
+### 使用方式
+
+**无需额外配置**：默认就是线程模式，只要启动了 `uvicorn` 就能执行任务。
+
+如需切换回 Celery 模式：
+```bash
+TASK_EXECUTOR_MODE=celery uvicorn app.main:app --reload --port 8000
+# 同时需要启动 Celery worker
+celery -A app.core.celery_app worker --loglevel=info
+```
+
+### 兼容性
+
+- 线程模式为默认模式，向后兼容所有现有功能
+- `current_step` 为可选字段，不影响已有任务查询
+- Celery 模式仍可通过环境变量切换
+
+---
+
 ---
 
 ## 格式说明

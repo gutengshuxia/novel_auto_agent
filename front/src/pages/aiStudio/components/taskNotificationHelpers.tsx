@@ -46,6 +46,10 @@ function formatStartedAt(startedAtTs?: number | null): string | null {
 
 function buildDescription(task: RelationTaskState, runningDescription: string, cancellingDescription: string): ReactNode {
   const parts: string[] = []
+  // 显示当前步骤名称
+  if (task.currentStep) {
+    parts.push(task.currentStep)
+  }
   parts.push(`进度 ${Math.max(0, Math.min(100, Math.round(task.progress)))}%`)
   const elapsedLabel = formatElapsedMs(task.elapsedMs)
   if (elapsedLabel) {
@@ -116,6 +120,7 @@ export function useRelationTaskNotification({
       startedAtTs: task.startedAtTs,
       finishedAtTs: task.finishedAtTs,
       elapsedMs: task.elapsedMs,
+      currentStep: task.currentStep,
       onCancel,
       onNavigate,
     })
@@ -152,6 +157,7 @@ export function useRelationTaskNotification({
     const elapsedLabel = formatElapsedMs(settledTask.elapsedMs)
     const startedAtLabel = formatStartedAt(settledTask.startedAtTs)
     const details = [
+      settledTask.currentStep || null,
       `进度 ${Math.max(0, Math.min(100, Math.round(settledTask.progress)))}%`,
       elapsedLabel ? `累计耗时 ${elapsedLabel}` : null,
       startedAtLabel ? `开始于 ${startedAtLabel}` : null,
@@ -174,6 +180,7 @@ export function useRelationTaskNotification({
       startedAtTs: settledTask.startedAtTs,
       finishedAtTs: settledTask.finishedAtTs,
       elapsedMs: settledTask.elapsedMs,
+      currentStep: settledTask.currentStep,
       onCancel: null,
       onNavigate,
     })

@@ -61,6 +61,8 @@ class AbstractWorkerTaskExecutor(ABC):
     result_progress: int = 70
     succeeded_progress: int = 100
     timeout_seconds: float | None = None
+    # 子类可覆盖：步骤名称列表，用于前端展示当前执行阶段
+    step_names: list[str] = []
 
     def __init__(self, *, session_maker: sessionmaker[Session] = sync_session_maker) -> None:
         self._session_maker = session_maker
@@ -101,6 +103,8 @@ class AbstractWorkerTaskExecutor(ABC):
                 return None
             ctx.store.set_status(task_id, TaskStatus.running)
             ctx.store.set_progress(task_id, self.running_progress)
+            if self.step_names:
+                ctx.store.set_current_step(task_id, self.step_names[0])
             db.commit()
             return self.load_run_args(ctx)
 
@@ -111,9 +115,14 @@ class AbstractWorkerTaskExecutor(ABC):
                 return None
             if self._cancel_if_requested(ctx):
                 return None
+            # 设置执行中步骤名称
+            if len(self.step_names) > 1:
+                self._set_step(task_id, self.step_names[1])
             result = self.execute(ctx, run_args)
             ctx.store.set_progress(task_id, self.result_progress)
             ctx.store.set_result(task_id, self.serialize_result(result))
+            if len(self.step_names) > 2:
+                ctx.store.set_current_step(task_id, self.step_names[2])
             db.commit()
             return result
 
@@ -180,6 +189,18 @@ class AbstractWorkerTaskExecutor(ABC):
 
     def _elapsed_ms(self, started_at: float) -> int:
         return int((time.monotonic() - started_at) * 1000)
+
+    def _set_step(self, task_id: str, step_name: str) -> None:
+        """更新当前执行步骤名称（供前端展示）。"""
+        logger.info("[%s] step: %s (task=%s)", self.task_kind, step_name, task_id)
+        try:
+            with self._session_maker() as db:
+                row = db.get(GenerationTask, task_id)
+                if row is not None:
+                    row.current_step = step_name
+                    db.flush()
+        except Exception:
+            logger.debug("failed to set current_step for task %s", task_id, exc_info=True)
 
     def _ensure_not_timed_out(self, task_id: str, started_at: float) -> None:
         if self.timeout_seconds is None:

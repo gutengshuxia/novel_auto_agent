@@ -116,6 +116,7 @@ async def list_tasks(
                 resource_type=item.resource_type,
                 navigate_relation_type=item.navigate_relation_type,
                 navigate_relation_entity_id=item.navigate_relation_entity_id,
+                current_step=item.current_step,
             )
             for item in items
         ],
@@ -148,6 +149,7 @@ async def get_task_status(
             started_at_ts=view.started_at_ts,
             finished_at_ts=view.finished_at_ts,
             elapsed_ms=view.elapsed_ms,
+            current_step=view.current_step,
         )
     )
 
