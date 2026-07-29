@@ -986,3 +986,96 @@ cd /Users/guteng/Coding/AI_MOVIE/novel_auto_agent/front
 npx tsc --noEmit
 npx vite build
 ```
+
+---
+
+## 20. 任务执行系统开发指南
+
+### 20.1 任务执行模式配置
+
+默认使用线程模式（无需 Celery），通过环境变量切换：
+
+```bash
+# 线程模式（默认，开发环境推荐）
+export TASK_EXECUTOR_MODE=thread
+
+# Celery 模式（生产环境，需额外启动 worker）
+export TASK_EXECUTOR_MODE=celery
+```
+
+启动后端：
+
+```bash
+cd backend && source .venv/bin/activate
+uvicorn app.main:app --reload --port 8000
+# 线程模式下无需启动其他进程
+```
+
+### 20.2 添加新的任务执行器
+
+继承 `AbstractWorkerTaskExecutor` 并声明 `step_names`：
+
+```python
+# backend/app/services/script_processing_worker.py
+
+class MyNewTaskExecutor(AbstractWorkerTaskExecutor):
+    task_kind = "my_new_task"
+    timeout_seconds = 600.0
+    step_names = ["准备任务", "正在执行…", "写入结果"]  # 3 个步骤名
+
+    def __init__(self) -> None:
+        super().__init__(session_maker=sync_session_maker)
+
+    def execute(self, ctx: WorkerTaskContext, run_args: dict) -> MyResult:
+        # 执行逻辑，返回 Pydantic model 或 dict
+        return MyResult(...)
+
+    def should_apply(self, ctx, run_args, result) -> bool:
+        return True
+
+    def apply_result(self, ctx, run_args, result) -> None:
+        # 将结果写入 DB
+        pass
+```
+
+基类自动处理：
+- 步骤名称更新（`_set_step`）
+- 进度设置（5% → 70% → 100%）
+- 结果序列化（`serialize_result`，调用 `model_dump()`）
+- 错误捕获和状态更新
+
+### 20.3 current_step 数据流
+
+`current_step` 字段贯穿全链路，前端轮询时自动获取：
+
+| 层 | 文件 | 字段 |
+|---|---|---|
+| DB | `backend/app/models/task.py` | `GenerationTask.current_step` |
+| Store | `backend/app/core/task_manager/stores.py` | `set_current_step()` |
+| API | `backend/app/api/v1/routes/film/common.py` | `TaskStatusRead.current_step` |
+| 前端类型 | `front/src/.../chapterDivisionTasks.ts` | `RelationTaskState.currentStep` |
+| 通知组件 | `front/src/.../taskNotificationHelpers.tsx` | `buildDescription()` |
+
+### 20.4 任务结果获取链路
+
+前端通过 `/tasks/{task_id}/result` API 获取任务产出：
+
+```typescript
+// 后端返回 ScriptDivisionResult.model_dump()
+// { shots: [...], total_shots: 12, notes: "..." }
+const res = await FilmService.getTaskResultApiV1FilmTasksTaskIdResultGet({ taskId })
+const shotCount = (res.data?.result as any)?.total_shots ?? 0
+```
+
+`useChapterDivisionTaskMapPolling` 在任务完成时自动获取结果并通过 `onTasksSettled` 回调传递。
+
+### 20.5 隐私与安全
+
+以下文件已被 `.gitignore` 排除，**绝不可手动添加**：
+
+| 类型 | 文件模式 | 说明 |
+|---|---|---|
+| 环境变量 | `.env`, `backend/.env` | 含 API Key、数据库密码 |
+| 数据库 | `*.db`, `*.sqlite3` | 含用户数据 |
+| 日志 | `*.log` | 可能含敏感信息 |
+| 演员表 | `cast.json` | 含创作数据 |

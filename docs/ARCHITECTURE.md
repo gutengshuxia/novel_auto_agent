@@ -1041,3 +1041,60 @@ Step 3 #2 → Step 4 #2 → Step 4.5 review (默认 accept) → Step 5 → Step 
 - `replan_count >= 1` (reject 计入回滚)
 - `step4_5_review_decision` 最终为 "accept"
 - trajectory 包含 2 次 step4_5_review,2 次 step4,2 次 step3
+
+---
+
+## 17. 任务执行系统与前端可视化
+
+### 17.1 双模式执行架构
+
+异步任务（分镜提取、信息提取、一致性检查等）通过 `AbstractWorkerTaskExecutor` 基类执行，支持两种运行模式：
+
+| 模式 | 环境变量 | 适用场景 | 依赖 |
+|---|---|---|---|
+| **线程模式（默认）** | `TASK_EXECUTOR_MODE=thread` | 开发环境、单机部署 | 无额外依赖 |
+| Celery 模式 | `TASK_EXECUTOR_MODE=celery` | 生产环境、分布式 | Celery + Redis/RabbitMQ |
+
+线程模式下，任务通过 `ThreadPoolExecutor(max_workers=4)` 执行，无需启动额外的 worker 进程。只需启动 FastAPI（uvicorn）即可处理所有异步任务。
+
+### 17.2 步骤可视化（current_step）
+
+每个任务执行器声明 3 个步骤名称（`step_names`），基类在执行过程中自动更新：
+
+```python
+class DivideTaskExecutor(AbstractWorkerTaskExecutor):
+    step_names = ["准备分镜任务", "正在拆分镜头…", "写入分镜结果"]
+```
+
+数据流全链路穿透：
+
+```
+task_executor._set_step() → DB(generation_tasks.current_step)
+  → TaskRecord.current_step → TaskStatusView.current_step
+  → API(TaskStatusRead.current_step) → 前端(RelationTaskState.currentStep)
+  → 通知弹窗显示
+```
+
+### 17.3 任务结果通知
+
+任务完成后，前端自动获取任务结果并展示产出摘要：
+
+```
+任务完成 → polling 检测 finished → 通过 chapterTaskIdsRef 获取 taskId
+  → GET /tasks/{taskId}/result → 解析 ScriptDivisionResult.total_shots
+  → notification.success("分镜提取完成 — 第一章：成功拆分为 N 个镜头")
+```
+
+### 17.4 任务执行器一览
+
+| 执行器 | task_kind | step_names | 产出 |
+|---|---|---|---|
+| `DivideTaskExecutor` | script_divide | 准备/拆分/写入 | ScriptDivisionResult (shots + total_shots) |
+| `ExtractTaskExecutor` | script_extract | 准备/提取/写入 | 场景/角色/道具提取结果 |
+| `ConsistencyTaskExecutor` | consistency_check | 准备/检查/完成 | 角色混淆等一致性报告 |
+| `OptimizeTaskExecutor` | script_optimize | 准备/优化/写入 | 剧本优化结果 |
+| `SimplifyTaskExecutor` | script_simplify | 准备/简化/写入 | 剧本简化结果 |
+| `PortraitTaskExecutor` | character_portrait | 准备/分析/写入 | 角色肖像分析 |
+| `PropTaskExecutor` | prop_info | 准备/分析/写入 | 道具信息分析 |
+| `SceneTaskExecutor` | scene_info | 准备/分析/写入 | 场景信息分析 |
+| `CostumeTaskExecutor` | costume_info | 准备/分析/写入 | 服装信息分析 |
