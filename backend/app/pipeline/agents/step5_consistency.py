@@ -290,9 +290,12 @@ class Step5ConsistencyChecker(BaseAgent):
     temperature = 0.2  # 裁判要严谨, 低温
 
     def __call__(self, state: GraphState) -> dict[str, Any]:
-        analysis = state["story_analysis"]
-        storyboard = state["storyboard"]
-        plan = state["prompt_plan"]
+        analysis = state.get("story_analysis")
+        storyboard = state.get("storyboard")
+        plan = state.get("prompt_plan")
+        if analysis is None or storyboard is None or plan is None:
+            logger.error("[Step 5] 上游产物缺失, 无法继续")
+            return {}
         logger.info("[Step 5] 开始一致性检查 (回滚次数=%d)", state.get("replan_count", 0))
 
         # 把上游产物精简喂给裁判, 避免 token 爆炸
@@ -329,10 +332,9 @@ class Step5ConsistencyChecker(BaseAgent):
             checked_at_node=self.name,
         )
 
-        # ---- 回滚计数自增 (放在条件路由之前) ----
+        # -------- rechplan_te 由 workflow._should_replan 统一管理, Step 5 不再递增 --------
         replan_count = state.get("replan_count", 0)
         if not judge.passed:
-            state["replan_count"] = replan_count + 1
             # 回滚时清空 Prompt 字段, 让 Step 3+4 重做
             for sp in plan.shot_prompts:
                 for v in sp.variants:

@@ -77,9 +77,12 @@ class Step6ModelAdapter(BaseAgent):
     temperature = 0.0  # ?????, ?? LLM
 
     def __call__(self, state: GraphState) -> dict[str, Any]:
-        storyboard = state["storyboard"]
-        plan = state["prompt_plan"]
-        analysis = state["story_analysis"]
+        storyboard = state.get("storyboard")
+        plan = state.get("prompt_plan")
+        analysis = state.get("story_analysis")
+        if storyboard is None or plan is None or analysis is None:
+            logger.error("[Step 6] 上游产物缺失, 无法继续")
+            return {}
         logger.info("[Step 6] ?????? (2 ??)")
 
         shot_map = {s.shot_id: s for s in storyboard.shots}

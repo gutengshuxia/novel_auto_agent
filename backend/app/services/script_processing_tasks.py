@@ -125,6 +125,7 @@ async def _find_active_task(
             GenerationTask.status.in_(_ACTIVE_TASK_STATUSES),
         )
         .limit(1)
+        .with_for_update(of=GenerationTask, nowait=False)
     )
     return (await db.execute(stmt)).scalars().first()
 

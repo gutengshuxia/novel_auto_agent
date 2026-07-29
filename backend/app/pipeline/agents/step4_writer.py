@@ -204,9 +204,12 @@ class Step4Writer(BaseAgent):
     temperature = 0.75
 
     def __call__(self, state: GraphState) -> dict[str, Any]:
-        analysis = state["story_analysis"]
-        storyboard = state["storyboard"]
-        plan = state["prompt_plan"]
+        analysis = state.get("story_analysis")
+        storyboard = state.get("storyboard")
+        plan = state.get("prompt_plan")
+        if analysis is None or storyboard is None or plan is None:
+            logger.error("[Step 4] 上游产物缺失, 无法继续")
+            return {}
         logger.info("[Step 4] 开始 Prompt 撰写 (%d 变体)", sum(len(sp.variants) for sp in plan.shot_prompts))
 
         shot_map = {s.shot_id: s for s in storyboard.shots}

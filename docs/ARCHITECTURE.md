@@ -700,6 +700,15 @@ class CastManager:
         """导出供 Excel 演员表 Sheet 使用"""
 ```
 
+
+#### 13.3.1 线程安全
+
+- CastManager 通过 self._lock (实例锁) 保护内存中的 cast_data
+- 全局 _file_locks 按文件路径缓存文件锁，保证多实例读写同一 cast.json 不冲突
+- save() 使用 **原子写入**：先写 .tmp，再 os.replace() 到目标路径
+- Agent 节点中使用方式: cm = CastManager() → with cm._lock: cm._merge_characters_unlocked(...)
+- **禁止** 使用 CastManager.__new__() hack
+
 ### 13.4 工作流程
 
 ```
@@ -923,9 +932,12 @@ novel_auto_agent/
 | `JellyfishAdapter` | `backend/app/pipeline/adapters/jellyfish_adapter.py` | DB ↔ Pipeline 双向数据转换 | novel_codex_agent |
 | 6 步 Agents | `backend/app/pipeline/agents/` | 剧本分析→分镜→规划→撰写→检查→适配 | novel_codex_agent |
 | Pipeline Schemas | `backend/app/pipeline/schemas/` | Pydantic v2 数据契约 | novel_codex_agent |
-| Pipeline Utils | `backend/app/pipeline/utils/` | LLM工厂/Excel导出/CastManager/故事板卡片 | novel_codex_agent |
+| Pipeline Utils | ackend/app/pipeline/utils/ | LLM工厂/Excel导出/CastManager(线程安全)/故事板卡片 | novel_codex_agent |
 | `novel_codex` Schema | `backend/app/schemas/novel_codex.py` | API 请求/响应模型 | Jellyfish |
 | `NovelCodexBridge` | `backend/app/services/novel_codex_bridge.py` | 桥接服务,异步调度 Pipeline | Jellyfish |
+
+> ⚠️ **线程安全**: _tasks 字典使用 _tasks_lock 保护。任务创建/更新/读取必须通过 _create_task() / _update_task_fields() / _safe_read_task() 方法。
+
 | `novel_codex` Route | `backend/app/api/v1/routes/novel_codex.py` | 3 个 REST 端点 | Jellyfish |
 | `novelCodexService` | `front/src/services/novelCodexService.ts` | 前端 API 封装 | Jellyfish |
 | `NovelCodexPanel` | `front/src/pages/.../NovelCodexPanel.tsx` | 按钮+进度弹窗+结果面板 | Jellyfish |

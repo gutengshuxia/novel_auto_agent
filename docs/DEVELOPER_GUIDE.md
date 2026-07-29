@@ -610,6 +610,15 @@ excel_data = cast_manager.to_excel_data()
 
 ### 15.2 在 Pipeline 中使用
 
+
+### 15.1 线程安全
+
+- CastManager 实例自带 self._lock，保护内存中的 cast_data
+- 全局 _file_locks 按文件路径缓存锁，多实例安全
+- save() 原子写入: .tmp -> os.replace()
+- Agent 节点用法: cm = CastManager() -> with cm._lock: cm._merge_characters_unlocked(...)
+- **禁止** 使用 CastManager.__new__() hack
+
 `main.py` 已集成 CastManager:
 
 ```python
@@ -810,6 +819,9 @@ novel_auto_agent/
 ├── src/engine.py               ├── backend/
 ├── src/adapters/               │   ├── app/schemas/novel_codex.py
 │   └── jellyfish_adapter.py    │   ├── app/services/novel_codex_bridge.py
+
+> ⚠️ **并发安全**: NovelCodexBridge 通过 _tasks_lock=threading.Lock() 保护全局任务字典。任务创建/状态更新/读取必须通过 _create_task() / _update_task_fields() / _safe_read_task() 方法，禁止直接操作 _tasks 字典。
+
 └── pyproject.toml              │   ├── app/api/v1/routes/novel_codex.py
                                 │   └── pyproject.toml (dependency)
                                 └── front/src/

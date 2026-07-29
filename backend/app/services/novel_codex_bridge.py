@@ -28,7 +28,29 @@ logger = logging.getLogger(__name__)
 
 # ---- 全局任务存储 (简化版, 后续可迁移到 GenerationTask) ----
 _tasks: dict[str, dict[str, Any]] = {}
+_tasks_lock = threading.Lock()
 _executor = ThreadPoolExecutor(max_workers=2, thread_name_prefix="novel_codex")
+
+
+def _safe_read_task(task_id: str) -> dict[str, Any] | None:
+    """线程安全读取任务快照。"""
+    with _tasks_lock:
+        task = _tasks.get(task_id)
+        return dict(task) if task is not None else None
+
+
+def _create_task(task_id: str, initial: dict[str, Any]) -> None:
+    """线程安全创建任务。"""
+    with _tasks_lock:
+        _tasks[task_id] = dict(initial)
+
+
+def _update_task_fields(task_id: str, **kwargs: Any) -> None:
+    """线程安全更新任务字段。"""
+    with _tasks_lock:
+        task = _tasks.get(task_id)
+        if task is not None:
+            task.update(kwargs)
 
 
 class NovelCodexBridge:
@@ -54,16 +76,16 @@ class NovelCodexBridge:
         if not chapter_data:
             raise ValueError(f"Chapter not found: {chapter_id}")
 
-        # 2. 创建任务记录
+        # 2. 线程安全创建任务记录
         task_id = f"nc_{uuid.uuid4().hex[:12]}"
-        _tasks[task_id] = {
+        _create_task(task_id, {
             "status": "pending",
             "progress": 0,
             "current_step": "",
             "chapter_id": chapter_id,
             "result": None,
             "error": None,
-        }
+        })
 
         # 3. 在线程池中执行 Pipeline
         def _run_pipeline():
@@ -89,13 +111,11 @@ class NovelCodexBridge:
 
                 # 进度回调
                 def on_progress(step: str, pct: int):
-                    _tasks[task_id]["current_step"] = step
-                    _tasks[task_id]["progress"] = pct
-                    _tasks[task_id]["status"] = "running"
+                    _update_task_fields(task_id,
+                        current_step=step, progress=pct, status="running")
 
                 # 执行 Pipeline
-                _tasks[task_id]["status"] = "running"
-                _tasks[task_id]["progress"] = 5
+                _update_task_fields(task_id, status="running", progress=5)
                 result = engine.run(
                     story_text=pipeline_input["story_text"],
                     story_title=pipeline_input["story_title"],
@@ -105,10 +125,12 @@ class NovelCodexBridge:
                 )
 
                 result_dict = result.to_dict()
-                _tasks[task_id]["result"] = result_dict
-                _tasks[task_id]["status"] = "succeeded" if result.success else "failed"
-                _tasks[task_id]["progress"] = 100
-                _tasks[task_id]["error"] = result.error
+                _update_task_fields(task_id,
+                    result=result_dict,
+                    status="succeeded" if result.success else "failed",
+                    progress=100,
+                    error=result.error,
+                )
 
                 if result.success:
                     logger.info("Pipeline 成功: task=%s, %.1fs", task_id, result.elapsed_seconds)
@@ -117,15 +139,14 @@ class NovelCodexBridge:
 
             except Exception as e:
                 logger.exception("Pipeline 异常: task=%s", task_id)
-                _tasks[task_id]["status"] = "failed"
-                _tasks[task_id]["error"] = str(e)
+                _update_task_fields(task_id, status="failed", error=str(e))
 
         _executor.submit(_run_pipeline)
         return task_id
 
     async def get_task_status(self, task_id: str) -> dict[str, Any]:
         """查询任务状态。"""
-        task = _tasks.get(task_id)
+        task = _safe_read_task(task_id)
         if not task:
             raise ValueError(f"Task not found: {task_id}")
         return {
@@ -133,99 +154,39 @@ class NovelCodexBridge:
             "status": task["status"],
             "current_step": task["current_step"],
             "progress": task["progress"],
-            "error": task["error"] or "",
+            "error": task.get("error"),
         }
 
     async def get_task_result(
         self,
         task_id: str,
         db: AsyncSession,
-    ) -> dict[str, Any]:
-        """获取任务结果 (含写回 DB 后的摘要)。"""
-        task = _tasks.get(task_id)
+    ) -> dict[str, Any] | None:
+        """获取任务结果, 完成后写回 DB。"""
+        task = _safe_read_task(task_id)
         if not task:
             raise ValueError(f"Task not found: {task_id}")
 
-        if task["status"] != "succeeded":
-            return {
-                "task_id": task_id,
-                "status": task["status"],
-                "error": task["error"] or "",
-            }
+        if task["status"] not in ("succeeded", "failed"):
+            return None
 
         result = task["result"]
-        chapter_id = task["chapter_id"]
 
-        # 写回 DB
-        await self._write_back_results(db, chapter_id, result)
+        # 成功后写回 DB
+        if task["status"] == "succeeded" and result:
+            await self._write_back_results(db, task["chapter_id"], result)
 
-        # 构建返回摘要
-        from app.pipeline.adapters import JellyfishAdapter
-        adapter = JellyfishAdapter()
+        return result
 
-        # 构建 shot_prompts 摘要
-        shot_prompts = []
-        write_back_cmds = adapter.build_write_back_commands(
-            result, chapter_id,
-            shots=task.get("_shots_cache", []),
-        )
-        for cmd in write_back_cmds:
-            updates = cmd.get("updates", {})
-            shot_prompts.append({
-                "shot_id": cmd["shot_id"],
-                "shot_index": cmd["shot_index"],
-                "shot_title": "",
-                "prompt_text": updates.get("video_prompt_kling", ""),
-                "negative_prompt": updates.get("negative_prompt", ""),
-                "model": "kling",
-                "quality_score": updates.get("prompt_quality_score", 0.0),
-            })
+    def _build_story_title(self, project_name: str, chapter_title: str | None = None) -> str:
+        """构建 story_title (格式: 项目名 - 章节名)。"""
+        if chapter_title:
+            return f"{project_name} - {chapter_title}"
+        return project_name
 
-        # 构建 cards 摘要
-        cards_cmds = adapter.build_storyboard_cards_commands(result, chapter_id)
-        cards = [
-            {
-                "shot_id": c["shot_id"],
-                "card_type": c["card_type"],
-                "title": c["title"],
-                "prompt": c["prompt"],
-                "image_url": c.get("image_url", ""),
-            }
-            for c in cards_cmds
-        ]
-
-        overall_score = 0.0
-        if result.get("consistency_report"):
-            overall_score = float(result["consistency_report"].get("score", 0))
-
-        return {
-            "task_id": task_id,
-            "status": "succeeded",
-            "current_step": "done",
-            "progress": 100,
-            "shot_prompts": shot_prompts,
-            "storyboard_cards": cards,
-            "overall_score": overall_score,
-            "cast_updated": bool(result.get("cast_data")),
-            "elapsed_seconds": result.get("elapsed_seconds", 0.0),
-            "error": "",
-        }
-
-    # ---- 内部方法 ----
-
-    async def _load_chapter_data(
-        self,
-        db: AsyncSession,
-        chapter_id: str,
-    ) -> dict[str, Any] | None:
-        """从 DB 加载章节完整数据。"""
-        # 加载 chapter + project
-        stmt = (
-            select(Chapter)
-            .options(selectinload(Chapter.project))
-            .where(Chapter.id == chapter_id)
-        )
-        chapter = (await db.execute(stmt)).scalar_one_or_none()
+    async def _load_chapter_data(self, db: AsyncSession, chapter_id: str) -> dict[str, Any] | None:
+        """从 DB 加载章节相关数据。"""
+        chapter = await db.get(Chapter, chapter_id)
         if not chapter:
             return None
 
@@ -339,7 +300,6 @@ class NovelCodexBridge:
                 # 写入 description 字段 (作为 video prompt 存储)
                 if updates.get("video_prompt_kling"):
                     detail.description = updates["video_prompt_kling"]
-                # TODO: 当 ShotDetail 新增 video_prompt_kling/jimeng 字段后, 改用专用字段
 
         await db.commit()
         logger.info("写回 DB 完成: chapter=%s, %d 条命令", chapter_id, len(commands))

@@ -187,14 +187,15 @@ class Step1Analyzer(BaseAgent):
         chapter_title = state.get("chapter_title") or story_title or "unknown"
         if cast_data is not None:
             from ..utils import CastManager
-            temp_cm = CastManager.__new__(CastManager)
-            temp_cm.cast_data = cast_data
+            temp_cm = CastManager()
             temp_cm._dirty = False
-            merge_result = temp_cm.merge_characters(
-                [ch.model_dump() for ch in result.characters],
-                chapter_title,
-            )
-            cast_data = temp_cm.cast_data
+            with temp_cm._lock:
+                temp_cm.cast_data = dict(cast_data)
+                merge_result = temp_cm._merge_characters_unlocked(
+                    [ch.model_dump() for ch in result.characters],
+                    chapter_title,
+                )
+                cast_data = dict(temp_cm.cast_data)
             if merge_result["new"]:
                 logger.info("[Step 1] ✨ 新角色注册: %s", merge_result["new"])
             if merge_result["updated"]:

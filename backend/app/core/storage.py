@@ -1,4 +1,4 @@
-"""统一的对象存储封装（目前以 S3 兼容为主）。
+﻿"""统一的对象存储封装（目前以 S3 兼容为主）。
 
 设计目标：
 - 提供上传 / 下载 / 列表 / 详情 等基础能力；
@@ -11,10 +11,21 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, BinaryIO
 
-from anyio import to_thread
-import boto3
-from botocore.client import Config as BotoConfig
-from botocore.exceptions import ClientError
+
+# boto3 为可选依赖（S3 功能需要时再 import）
+_boto3 = None
+_BotoConfig = None
+_ClientError = None
+
+def _ensure_boto3():
+    global _boto3, _BotoConfig, _ClientError
+    if _boto3 is None:
+        import boto3 as _boto3_mod
+        from botocore.client import Config as _BotoConfig_mod
+        from botocore.exceptions import ClientError as _ClientError_mod
+        _boto3 = _boto3_mod
+        _BotoConfig = _BotoConfig_mod
+        _ClientError = _ClientError_mod
 
 from app.config import settings
 
@@ -35,13 +46,13 @@ def _build_s3_client():
     if not settings.s3_bucket_name:
         raise RuntimeError("S3 未配置：请在配置中设置 s3_bucket_name 等必要字段")
 
-    client = boto3.client(
+    client = _ensure_boto3() or _boto3.client(
         "s3",
         endpoint_url=settings.s3_endpoint_url,
         region_name=settings.s3_region_name,
         aws_access_key_id=settings.s3_access_key_id,
         aws_secret_access_key=settings.s3_secret_access_key,
-        config=BotoConfig(s3={"addressing_style": "virtual"}),
+        config=_BotoConfig(s3={"addressing_style": "virtual"}),
     )
     return client
 
@@ -85,7 +96,7 @@ def init_storage() -> None:
     try:
         client.head_bucket(Bucket=bucket)
         return
-    except ClientError as e:
+    except _ClientError as e:
         code = str(e.response.get("Error", {}).get("Code", ""))
         # 常见不存在：404 / NoSuchBucket / NotFound
         if code not in {"404", "NoSuchBucket", "NotFound"}:
@@ -99,7 +110,7 @@ def init_storage() -> None:
 
     try:
         client.create_bucket(**params)
-    except ClientError as e:
+    except _ClientError as e:
         # 可能出现并发创建或服务端返回已存在
         code = str(e.response.get("Error", {}).get("Code", ""))
         if code in {"BucketAlreadyOwnedByYou", "BucketAlreadyExists"}:

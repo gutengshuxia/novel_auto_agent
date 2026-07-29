@@ -133,8 +133,11 @@ class Step3Planner(BaseAgent):
     temperature = 0.4
 
     def __call__(self, state: GraphState) -> dict[str, Any]:
-        analysis = state["story_analysis"]
-        storyboard = state["storyboard"]
+        analysis = state.get("story_analysis")
+        storyboard = state.get("storyboard")
+        if analysis is None or storyboard is None:
+            logger.error("[Step 3] story_analysis 或 storyboard 缺失, 无法继续")
+            return {}
         logger.info("[Step 3] 开始 Prompt 规划 (%d 镜头 × %d 模型)",
                     len(storyboard.shots), len(analysis.target_models))
 

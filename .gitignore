@@ -49,3 +49,5 @@ cast.json
 # ===== 虚拟环境 =====
 backend/.venv/
 front/node_modules/
+backend/.deps/
+backend/.env
