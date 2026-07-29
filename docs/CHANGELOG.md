@@ -4,6 +4,39 @@
 
 ---
 
+## [2026-07-29] 分镜提取完成后显示结果通知
+
+### 问题描述
+
+分镜提取任务完成后，前端只显示进度条和"已完成"状态，用户无法直观看到提取的产出结果（如拆分了多少个镜头）。
+
+### 解决思路
+
+在任务完成（settled）时，通过已建立的 task ID 追踪链路，从后端 `/tasks/{task_id}/result` API 获取任务结果数据（`ScriptDivisionResult`），提取 `total_shots` 字段，通过 antd `notification.success` 弹窗展示给用户。
+
+### 修改文件
+
+- `front/src/pages/aiStudio/project/ProjectWorkbench/chapterDivisionTasks.ts`
+  - 新增 `TaskResultInfo` 类型
+  - `useChapterDivisionTaskMapPolling` 新增 `chapterTaskIdsRef` 追踪每个章节的任务 ID
+  - 任务完成时自动调用 `getTaskResultApiV1FilmTasksTaskIdResultGet` 获取结果
+  - `onTasksSettled` 回调签名扩展为 `(chapterIds, taskResults) => void`
+
+- `front/src/pages/aiStudio/project/ProjectWorkbench/tabs/ChaptersTab.tsx`
+  - 导入 `notification` 组件
+  - `onTasksSettled` 回调中遍历 taskResults，显示通知：
+    - 成功：`分镜提取完成 - 章节名：成功拆分为 N 个镜头`
+    - 失败：`分镜提取失败 - 章节名：提取失败，请查看日志`
+
+### 数据流
+
+任务完成 → polling 检测到 finished → 通过 chapterTaskIdsRef 获取 taskId → 调用 /tasks/{taskId}/result API → 解析 ScriptDivisionResult.total_shots → notification.success 展示
+
+### 测试结果
+
+- ✅ TypeScript 编译通过（0 errors）
+
+
 ## [2024-07-21] 前端模型管理与 Pipeline 打通 + LLM 测试功能实现
 
 ### 问题描述

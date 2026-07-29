@@ -2,6 +2,12 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { FilmService } from '../../../../services/generated'
 import type { TaskStatus, TaskStatusRead } from '../../../../services/generated'
 
+export type TaskResultInfo = {
+  taskId: string
+  status: string
+  result: unknown
+}
+
 export const CHAPTER_DIVISION_RELATION_TYPE = 'chapter_division'
 export const SCRIPT_EXTRACTION_RELATION_TYPE = 'script_extraction'
 export const CONSISTENCY_CHECK_RELATION_TYPE = 'consistency_check'
@@ -48,7 +54,7 @@ type UseChapterDivisionTaskMapPollingOptions = {
   enabled?: boolean
   chapterIds: string[]
   pollIntervalMs?: number
-  onTasksSettled?: (chapterIds: string[]) => Promise<void> | void
+  onTasksSettled?: (chapterIds: string[], taskResults: Record<string, TaskResultInfo | null>) => Promise<void> | void
 }
 
 export const RELATION_TASK_POLL_INTERVAL_MS = 2000
@@ -331,6 +337,7 @@ export function useChapterDivisionTaskMapPolling({
 }: UseChapterDivisionTaskMapPollingOptions) {
   const [taskMap, setTaskMap] = useState<Record<string, ChapterDivisionTaskState>>({})
   const previousActiveChapterIdsRef = useRef<string[]>([])
+  const chapterTaskIdsRef = useRef<Record<string, string>>({})
   const onTasksSettledRef = useRef<UseChapterDivisionTaskMapPollingOptions['onTasksSettled']>(onTasksSettled)
 
   useEffect(() => {
@@ -356,12 +363,31 @@ export function useChapterDivisionTaskMapPolling({
       try {
         const nextMap = await loadActiveChapterDivisionTasks(chapterIds)
         if (cancelled) return
+        // Track task IDs per chapter
+        const nextTaskIds: Record<string, string> = {}
+        for (const [cid, t] of Object.entries(nextMap)) {
+          nextTaskIds[cid] = t.taskId
+        }
+        chapterTaskIdsRef.current = { ...chapterTaskIdsRef.current, ...nextTaskIds }
         setTaskMap(nextMap)
         const previousIds = previousActiveChapterIdsRef.current
         const currentIds = Object.keys(nextMap)
         const finishedIds = previousIds.filter((id) => !currentIds.includes(id))
         if (finishedIds.length > 0) {
-          await onTasksSettledRef.current?.(finishedIds)
+          const taskResults: Record<string, TaskResultInfo | null> = {}
+          await Promise.all(
+            finishedIds.map(async (cid) => {
+              const tid = chapterTaskIdsRef.current[cid]
+              if (!tid) return
+              try {
+                const res = await FilmService.getTaskResultApiV1FilmTasksTaskIdResultGet({ taskId: tid })
+                taskResults[cid] = { taskId: tid, status: res.data?.status ?? 'unknown', result: res.data?.result ?? null }
+              } catch {
+                taskResults[cid] = null
+              }
+            }),
+          )
+          await onTasksSettledRef.current?.(finishedIds, taskResults)
         }
         previousActiveChapterIdsRef.current = currentIds
       } catch {
@@ -392,13 +418,32 @@ export function useChapterDivisionTaskMapPolling({
       try {
         const nextMap = await loadActiveChapterDivisionTasks(chapterIds)
         if (cancelled) return
+        // Track task IDs per chapter
+        const nextTaskIds: Record<string, string> = {}
+        for (const [cid, t] of Object.entries(nextMap)) {
+          nextTaskIds[cid] = t.taskId
+        }
+        chapterTaskIdsRef.current = { ...chapterTaskIdsRef.current, ...nextTaskIds }
         setTaskMap(nextMap)
         const previousIds = previousActiveChapterIdsRef.current
         const currentIds = Object.keys(nextMap)
         const finishedIds = previousIds.filter((id) => !currentIds.includes(id))
         previousActiveChapterIdsRef.current = currentIds
         if (finishedIds.length > 0) {
-          await onTasksSettledRef.current?.(finishedIds)
+          const taskResults: Record<string, TaskResultInfo | null> = {}
+          await Promise.all(
+            finishedIds.map(async (cid) => {
+              const tid = chapterTaskIdsRef.current[cid]
+              if (!tid) return
+              try {
+                const res = await FilmService.getTaskResultApiV1FilmTasksTaskIdResultGet({ taskId: tid })
+                taskResults[cid] = { taskId: tid, status: res.data?.status ?? 'unknown', result: res.data?.result ?? null }
+              } catch {
+                taskResults[cid] = null
+              }
+            }),
+          )
+          await onTasksSettledRef.current?.(finishedIds, taskResults)
         }
         if (currentIds.length > 0) {
           timer = window.setTimeout(() => {

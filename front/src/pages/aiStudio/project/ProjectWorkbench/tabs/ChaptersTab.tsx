@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useRef } from 'react'
-import { Card, Button, Tag, Space, Table, Empty, Modal, Input, Dropdown, message } from 'antd'
+import { Card, Button, Tag, Space, Table, Empty, Modal, Input, Dropdown, message, notification } from 'antd'
 import type { MenuProps, TableColumnsType } from 'antd'
 import {
   EditOutlined,
@@ -60,8 +60,32 @@ export function ChaptersTab() {
   )
   const { taskMap: chapterDivisionTaskMap, setTrackedTaskMap: setChapterDivisionTaskMap } = useChapterDivisionTaskMapPolling({
     chapterIds,
-    onTasksSettled: async () => {
+    onTasksSettled: async (_finishedIds, taskResults) => {
       await refresh()
+      // Show notification with extraction results
+      const entries = Object.entries(taskResults)
+      if (entries.length === 0) return
+      for (const [chapterId, taskResult] of entries) {
+        const chapter = chapters.find((c) => c.id === chapterId)
+        const chapterTitle = chapter?.title || '未命名章节'
+        if (taskResult?.status === 'succeeded' && taskResult.result) {
+          const result = taskResult.result as { total_shots?: number; notes?: string }
+          const shotCount = result.total_shots ?? 0
+          notification.success({
+            message: `分镜提取完成`,
+            description: `${chapterTitle}：成功拆分为 ${shotCount} 个镜头`,
+            duration: 5,
+            placement: 'topRight',
+          })
+        } else if (taskResult?.status === 'failed') {
+          notification.error({
+            message: `分镜提取失败`,
+            description: `${chapterTitle}：提取失败，请查看日志`,
+            duration: 6,
+            placement: 'topRight',
+          })
+        }
+      }
     },
   })
 
