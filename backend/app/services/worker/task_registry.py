@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from app.services.film.generated_video import run_video_generation_task
 from app.services.film.shot_frame_prompt_tasks import run_shot_frame_prompt_task
+from app.services.film.full_prompt_pipeline_tasks import run_full_prompt_pipeline
 from app.services.script_processing_worker import (
     CharacterPortraitTaskExecutor,
     ConsistencyTaskExecutor,
@@ -72,5 +73,14 @@ task_executor_registry.register(
         task_kind="shot_frame_prompt",
         runner=run_shot_frame_prompt_task,
         timeout_seconds=600.0,
+    ),
+)
+
+task_executor_registry.register(
+    "full_prompt_pipeline",
+    AbstractAsyncDelegatingExecutor(
+        task_kind="full_prompt_pipeline",
+        runner=run_full_prompt_pipeline,
+        timeout_seconds=900.0,
     ),
 )

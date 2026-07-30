@@ -84,6 +84,7 @@ async def _resolve_navigation_targets(
         "shot_first_frame_prompt": "shot",
         "shot_last_frame_prompt": "shot",
         "shot_key_frame_prompt": "shot",
+    "full_prompt_pipeline": "shot",
     }
     image_like_models = {
         "actor_image": (ActorImage, "actor"),

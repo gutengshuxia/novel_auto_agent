@@ -37,6 +37,7 @@ const SHOT_RELATION_TYPES = new Set([
   'shot_first_frame_prompt',
   'shot_last_frame_prompt',
   'shot_key_frame_prompt',
+  'full_prompt_pipeline',
 ])
 
 function metaKeyForTask(task: TaskUiItem): string | null {

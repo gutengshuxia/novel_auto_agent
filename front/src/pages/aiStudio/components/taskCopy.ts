@@ -169,6 +169,7 @@ export const TASK_KIND_TITLE_MAP: Record<string, string> = {
   image_generation: '图片生成',
   video_generation: '视频生成',
   shot_frame_prompt: '分镜提示词生成',
+  full_prompt_pipeline: '完整 Prompt Pipeline',
 }
 
 export const RELATION_TYPE_LABEL_MAP: Record<string, string> = {

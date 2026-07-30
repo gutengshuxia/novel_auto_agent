@@ -5775,6 +5775,50 @@ function Inspector(props: {
                     >
                       AI生成
                     </Button>
+                    <Button
+                      size="small"
+                      type="dashed"
+                      loading={keyframePromptActionLoading}
+                      onClick={async () => {
+                        if (!selectedShot?.id) { message.warning('请先选择一个分镜'); return }
+                        setKeyframePromptActionLoading(true)
+                        try {
+                          const res = await fetch('/api/v1/film/tasks/full-prompt-pipeline', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ shot_id: selectedShot.id, target_model: '通用' }),
+                          })
+                          const json = await res.json()
+                          const taskId = json?.data?.task_id
+                          if (!taskId) { message.error('Pipeline 任务创建失败'); return }
+                          message.loading({ content: '完整 Pipeline 执行中（Beat规划→Prompt→审计→适配）...', key: 'pipeline', duration: 0 })
+                          for (let i = 0; i < 60; i++) {
+                            await sleep(2000)
+                            const sr = await FilmService.getTaskStatusApiV1FilmTasksTaskIdStatusGet({ taskId })
+                            const st = sr.data?.status
+                            if (st === 'succeeded') {
+                              message.destroy('pipeline')
+                              message.success('Pipeline 完成！已写入提示词')
+                              const detailRes = await StudioShotDetailsService.getShotDetailApiV1StudioShotDetailsShotIdGet({ shotId: selectedShot.id })
+                              const d = detailRes?.data as any
+                              if (d?.key_frame_prompt) {
+                                onPatchShotDetail({ key_frame_prompt: d.key_frame_prompt })
+                                keyframePromptDraft.replaceBase({ frameType: keyframePromptPreviewFrameType, prompt: d.key_frame_prompt })
+                              }
+                              break
+                            }
+                            if (st === 'failed' || st === 'cancelled') {
+                              message.destroy('pipeline')
+                              message.error('Pipeline ' + (st === 'failed' ? '失败' : '已取消'))
+                              break
+                            }
+                          }
+                        } catch { message.error('Pipeline 执行异常') }
+                        finally { setKeyframePromptActionLoading(false) }
+                      }}
+                    >
+                      完整Pipeline
+                    </Button>
                   </Space>
                 </div>
                 {!hasBasePrompt ? (

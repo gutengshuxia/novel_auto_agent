@@ -489,3 +489,20 @@ export async function fetchTaskLogs(taskId: string, afterId = 0): Promise<TaskLo
   const json = await response.json()
   return (json.data ?? []) as TaskLogEntry[]
 }
+
+
+/**
+ * 创建完整 Prompt Pipeline 任务
+ */
+export async function createFullPromptPipelineTask(
+  shotId: string,
+  targetModel: string = '通用',
+): Promise<{ task_id: string }> {
+  const response = await fetch('/api/v1/film/tasks/full-prompt-pipeline', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ shot_id: shotId, target_model: targetModel }),
+  })
+  const json = await response.json()
+  return json.data ?? { task_id: '' }
+}

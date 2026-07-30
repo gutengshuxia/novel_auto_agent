@@ -4,6 +4,88 @@
 
 ---
 
+## [2026-07-29] Pipeline 集成：完整 Prompt 生成流程
+
+### 问题描述
+
+前端"分镜提取"只调用了 ScriptDividerAgent 做文本拆分 + 简单镜头语言建议。
+真正的 Prompt 生成（时间戳格式 + @角色引用 + 一致性审计 + 模型适配）是 Pipeline 的 Step 3-6，
+此前只通过 CLI/API 可用，未集成到前端工作流。
+
+### 修改内容
+
+#### 新增 Agent（4个）
+
+- **BeatPlanningAgent**（`backend/app/chains/agents/beat_planning_agent.py`）
+  - 将镜头拆分为时间戳 Beat 序列（每个 Beat 含 start_time/end_time/action/character/micro_expression 等）
+  - 输出声音设计 + Prompt 策略（A/B/C）
+  - 移植自 Pipeline Step3_Planner
+
+- **TimestampPromptAgent**（`backend/app/chains/agents/timestamp_prompt_agent.py`）
+  - 生成带时间戳节奏的视频 Prompt（[0-2s] Beat1 / [2-4s] Beat2...）
+  - 使用 @角色名 引用（不重复描述外貌）
+  - 包含负面提示词 + 5 模型风格指令
+  - 移植自 Pipeline Step4_Writer
+
+- **PromptConsistencyAgent**（`backend/app/chains/agents/prompt_consistency_agent.py`）
+  - 11 维度一致性审计（剧情/人物/场景/道具/动作/摄影/光影/环境/声音/Prompt质量/负面提示词）
+  - 宽容审核策略：只抓实质性错误，允许合理细化
+  - 输出评分 + 修正建议 + 优化后 Prompt
+  - 移植自 Pipeline Step5_Consistency
+
+- **ModelAdapterAgent**（`backend/app/chains/agents/model_adapter_agent.py`）
+  - 纯规则优化，不需要 LLM 调用
+  - Kling：补充中文运镜
+  - 即梦：确保长度 >= 80 字符
+  - 通用负面提示词兜底
+
+#### 新增 Schema
+
+- **BeatPlanResult**（`backend/app/schemas/skills/beat_planning.py`）
+  - Beat 序列 + 声音设计 + Prompt 策略
+
+#### 新增 Pipeline 任务
+
+- **full_prompt_pipeline_tasks.py**（`backend/app/services/film/full_prompt_pipeline_tasks.py`）
+  - 完整 4 步流程：Beat 规划 → 时间戳 Prompt → 一致性审计 → 模型适配
+  - 复用 shot_frame_prompt_tasks 的上下文构建逻辑
+  - 每步写入执行日志
+  - 结果写入 ShotDetail.first_frame_prompt / key_frame_prompt / last_frame_prompt
+
+#### API 端点
+
+- **POST /api/v1/film/tasks/full-prompt-pipeline**（`backend/app/api/v1/routes/film/tasks_images.py`）
+  - 参数：shot_id + target_model（kling/jimeng/veo/runway/pixverse/通用）
+
+#### 前端集成
+
+- **ChapterStudio.tsx**：在"AI生成"按钮旁新增"完整Pipeline"按钮
+- **chapterDivisionTasks.ts**：新增 `createFullPromptPipelineTask` 函数
+- **taskCopy.ts / taskCenterMeta.ts**：注册新任务类型文案
+
+### 数据流
+
+```
+前端点击"完整Pipeline"
+  → POST /api/v1/film/tasks/full-prompt-pipeline
+  → run_full_prompt_pipeline()
+    → Step 1: BeatPlanningAgent → Beat 序列 + 声音设计
+    → Step 2: TimestampPromptAgent → 时间戳 Prompt + 负面提示词
+    → Step 3: PromptConsistencyAgent → 11 维度审计 → 优化后 Prompt
+    → Step 4: ModelAdapterAgent → 模型适配
+  → 写入 ShotDetail (first/key/last_frame_prompt)
+  → 前端轮询状态 → 完成后刷新
+```
+
+### 使用方式
+
+1. 在分镜工作室选择镜头
+2. 点击"完整Pipeline"按钮
+3. 等待 4 步流程完成（约 30-60 秒）
+4. 结果自动写入 key_frame_prompt 字段
+
+---
+
 ## [2026-07-29] 分镜拆分 Prompt 优化：合并优先原则
 
 ### 问题描述

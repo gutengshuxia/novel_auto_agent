@@ -17,6 +17,10 @@ from app.chains.agents.character_portrait_analysis_agent import CharacterPortrai
 from app.chains.agents.prop_info_analysis_agent import PropInfoAnalysisAgent
 from app.chains.agents.scene_info_analysis_agent import SceneInfoAnalysisAgent
 from app.chains.agents.costume_info_analysis_agent import CostumeInfoAnalysisAgent
+from app.chains.agents.beat_planning_agent import BeatPlanningAgent
+from app.chains.agents.prompt_consistency_agent import PromptConsistencyAgent
+from app.chains.agents.model_adapter_agent import ModelAdapterAgent
+from app.chains.agents.timestamp_prompt_agent import TimestampPromptAgent
 
 __all__ = [
     "AgentBase",
@@ -35,4 +39,8 @@ __all__ = [
     "PropInfoAnalysisAgent",
     "SceneInfoAnalysisAgent",
     "CostumeInfoAnalysisAgent",
+    "BeatPlanningAgent",
+    "PromptConsistencyAgent",
+    "ModelAdapterAgent",
+    "TimestampPromptAgent",
 ]
