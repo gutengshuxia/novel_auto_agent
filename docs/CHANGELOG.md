@@ -4,6 +4,51 @@
 
 ---
 
+## [2026-07-29] 任务执行日志前端可视化
+
+### 问题描述
+
+用户无法在前端看到分镜提取等任务的执行日志，只能看到进度条和当前步骤名称，无法了解任务执行的详细过程。
+
+### 修改内容
+
+- **新增 TaskLogEntry 模型**（`backend/app/models/task_log.py`）
+  - 字段：task_id、timestamp、level（info/warn/error/success）、step、message
+  - 注册到 `models/__init__.py` 和 `core/db.py` 的 `init_db()`
+
+- **任务执行器写入日志**（`backend/app/services/worker/task_executor.py`）
+  - 新增 `_write_log()` 方法，使用独立 session 写入（不影响主事务）
+  - 在任务开始、步骤切换、LLM 执行完成、任务成功/失败时写入日志
+
+- **分镜任务详细日志**（`backend/app/services/script_processing_worker.py`）
+  - DivideTaskExecutor.execute() 执行后写入：镜头总数、前5个镜头名称
+
+- **新增 API 端点**（`backend/app/api/v1/routes/film/task_status.py`）
+  - `GET /tasks/{task_id}/logs?after_id=N`：增量拉取日志（最多 200 条）
+
+- **前端日志面板**（`front/src/pages/aiStudio/project/ProjectWorkbench/components/TaskLogPanel.tsx`）
+  - 暗色终端风格，按时间线展示日志
+  - 每 2 秒增量轮询，自动滚动到底部
+  - 不同级别用不同颜色图标区分（info=蓝●、success=绿✓、warn=黄⚠、error=红✗）
+
+- **集成到章节列表**（`front/src/pages/aiStudio/project/ProjectWorkbench/tabs/ChaptersTab.tsx`）
+  - 有活跃任务的章节行可展开，展开后显示 TaskLogPanel
+
+- **数据流**：Worker 执行 → write_task_log() → task_log_entries 表 → API 轮询 → TaskLogPanel 展示
+
+### 使用方式
+
+1. 启动后端（`uvicorn`）和前端（`vite`）
+2. 在章节列表触发分镜提取
+3. 展开正在执行的章节行，即可看到实时执行日志
+
+### 兼容性
+
+- `task_log_entries` 表通过 `init_db.py` 创建
+- 日志写入失败不影响主任务执行（静默降级）
+
+---
+
 ## [2026-07-29] 分镜提取增强：丰富镜头语言 + 按情节智能拆分
 
 ### 问题描述

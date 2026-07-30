@@ -471,3 +471,21 @@ export function useChapterDivisionTaskMapPolling({
 
   return { taskMap, setTrackedTaskMap }
 }
+
+
+// ---- 任务执行日志 ----
+
+export type TaskLogEntry = {
+  id: number
+  task_id: string
+  timestamp: number
+  level: string
+  step: string
+  message: string
+}
+
+export async function fetchTaskLogs(taskId: string, afterId = 0): Promise<TaskLogEntry[]> {
+  const response = await fetch(`/api/v1/film/tasks/${taskId}/logs?after_id=${afterId}`)
+  const json = await response.json()
+  return (json.data ?? []) as TaskLogEntry[]
+}

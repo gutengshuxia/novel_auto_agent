@@ -6,6 +6,7 @@ from app.models.base import TimestampMixin
 from app.models.llm import Model, ModelSettings, Provider
 from app.models.task import GenerationTask
 from app.models.task_links import GenerationTaskLink
+from app.models.task_log import TaskLogEntry
 from app.models.types import FileUsageKind
 
 from app.models.studio import (

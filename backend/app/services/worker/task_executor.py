@@ -26,7 +26,7 @@ from app.core.task_manager import SyncSqlAlchemyTaskStore
 from app.core.task_manager.types import TaskRecord, TaskStatus
 from app.models.task import GenerationTask
 from app.services.llm.runtime import build_default_text_llm_sync
-from app.services.worker.task_logging import log_task_event
+from app.services.worker.task_logging import log_task_event, write_task_log
 
 
 logger = logging.getLogger(__name__)
@@ -70,6 +70,7 @@ class AbstractWorkerTaskExecutor(ABC):
     def run(self, task_id: str) -> None:
         started_at = time.monotonic()
         self._log_event("started", task_id)
+        self._write_log(task_id, "info", "任务开始执行", step=self.step_names[0] if self.step_names else "")
         try:
             run_args = self._mark_running_and_load_run_args(task_id)
             if run_args is None:
@@ -77,6 +78,8 @@ class AbstractWorkerTaskExecutor(ABC):
                 return
             self._ensure_not_timed_out(task_id, started_at)
             result = self._execute_phase(task_id, run_args)
+            if result is not None:
+                self._write_log(task_id, "info", "LLM 执行完成，正在处理结果...", step=self.step_names[2] if len(self.step_names) > 2 else "")
             if result is None:
                 self._log_event("cancelled", task_id, elapsed_ms=self._elapsed_ms(started_at))
                 return
@@ -84,14 +87,17 @@ class AbstractWorkerTaskExecutor(ABC):
             self._apply_and_finish(task_id, run_args, result)
             self._ensure_not_timed_out(task_id, started_at)
             self._log_event("succeeded", task_id, elapsed_ms=self._elapsed_ms(started_at))
+            self._write_log(task_id, "success", f"任务执行成功（耗时 {self._elapsed_ms(started_at)}ms）", step="完成")
         except HTTPException as exc:
             error = exc.detail if isinstance(exc.detail, str) else str(exc.detail)
             self._mark_failed(task_id, error)
             self._log_event("failed", task_id, elapsed_ms=self._elapsed_ms(started_at), error=error)
+            self._write_log(task_id, "error", f"任务执行失败：{error}", step="失败")
         except Exception as exc:  # noqa: BLE001
             logger.exception("%s task failed: %s", self.task_kind, task_id)
             self._mark_failed(task_id, str(exc))
             self._log_event("failed", task_id, elapsed_ms=self._elapsed_ms(started_at), error=str(exc))
+            self._write_log(task_id, "error", f"任务执行异常：{exc}", step="失败")
 
     def _mark_running_and_load_run_args(self, task_id: str) -> dict[str, Any] | None:
         with self._session_maker() as db:
@@ -187,12 +193,22 @@ class AbstractWorkerTaskExecutor(ABC):
     def _log_event(self, event: str, task_id: str, **fields: Any) -> None:
         log_task_event(self.task_kind, task_id, event, **fields)
 
+    def _write_log(self, task_id: str, level: str, message: str, step: str = "") -> None:
+        """将一条执行日志写入 DB（独立 session，不影响主事务）。"""
+        try:
+            with self._session_maker() as db:
+                write_task_log(db, task_id=task_id, level=level, message=message, step=step)
+                db.commit()
+        except Exception:
+            logger.debug("failed to write task log for %s", task_id, exc_info=True)
+
     def _elapsed_ms(self, started_at: float) -> int:
         return int((time.monotonic() - started_at) * 1000)
 
     def _set_step(self, task_id: str, step_name: str) -> None:
         """更新当前执行步骤名称（供前端展示）。"""
         logger.info("[%s] step: %s (task=%s)", self.task_kind, step_name, task_id)
+        self._write_log(task_id, "info", step_name, step=step_name)
         try:
             with self._session_maker() as db:
                 row = db.get(GenerationTask, task_id)
@@ -247,6 +263,7 @@ class AbstractAsyncDelegatingExecutor(AbstractWorkerTaskExecutor):
             timeout_seconds = self._resolve_timeout_seconds(run_args)
             asyncio.run(self._run_async_with_runtime(task_id, run_args, timeout_seconds))
             self._log_event("succeeded", task_id, elapsed_ms=self._elapsed_ms(started_at))
+            self._write_log(task_id, "success", f"任务执行成功（耗时 {self._elapsed_ms(started_at)}ms）", step="完成")
         except TimeoutError as exc:
             error = str(exc)
             self._mark_failed(task_id, error)

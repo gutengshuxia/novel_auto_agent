@@ -29,6 +29,7 @@ import {
   upsertRelationTaskStateInMap,
   useChapterDivisionTaskMapPolling,
 } from '../chapterDivisionTasks'
+import TaskLogPanel from '../components/TaskLogPanel'
 
 const { TextArea } = Input
 const CREATE_PARAM = 'create'
@@ -605,6 +606,14 @@ export function ChaptersTab() {
         dataSource={chapters}
         pagination={{ pageSize: 10 }}
         size="small"
+        expandable={{
+          expandedRowRender: (record) => {
+            const task = chapterDivisionTaskMap[record.id]
+            if (!task) return <div className="text-gray-400 text-xs py-2">暂无执行日志</div>
+            return <TaskLogPanel taskId={task.taskId} maxHeight={200} />
+          },
+          rowExpandable: (record) => !!chapterDivisionTaskMap[record.id],
+        }}
       />
 
       <ChapterRawTextEditorModal

@@ -11,6 +11,7 @@ from app.core.task_manager import SqlAlchemyTaskStore
 from app.core.task_manager.types import TaskStatus
 from app.dependencies import get_db
 from app.models.task_links import GenerationTaskLink
+from app.models.task_log import TaskLogEntry
 from app.schemas.common import ApiResponse, PaginatedData, created_response, empty_response, paginated_response, success_response
 from app.services.common import entity_not_found
 from app.tasks.execute_task import revoke_task_execution
@@ -255,6 +256,51 @@ async def adopt_task_link(
             entity_id=entity_id,
             is_adopted=True,
         )
+    )
+
+
+class TaskLogEntryRead(BaseModel):
+    """任务执行日志条目。"""
+    id: int
+    task_id: str
+    timestamp: float = Field(..., description="日志时间戳（Unix 秒）")
+    level: str = Field(..., description="日志级别：info / warn / error / success")
+    step: str = Field("", description="当前步骤名称")
+    message: str = Field(..., description="日志内容")
+
+
+@router.get(
+    "/tasks/{task_id}/logs",
+    response_model=ApiResponse[list[TaskLogEntryRead]],
+    summary="获取任务执行日志",
+)
+async def get_task_logs(
+    task_id: str,
+    db: AsyncSession = Depends(get_db),
+    after_id: int = Query(0, ge=0, description="只返回 id > after_id 的日志（增量拉取）"),
+) -> ApiResponse[list[TaskLogEntryRead]]:
+    from sqlalchemy import select as sa_select
+
+    stmt = (
+        sa_select(TaskLogEntry)
+        .where(TaskLogEntry.task_id == task_id, TaskLogEntry.id > after_id)
+        .order_by(TaskLogEntry.id.asc())
+        .limit(200)
+    )
+    result = await db.execute(stmt)
+    entries = result.scalars().all()
+    return success_response(
+        [
+            TaskLogEntryRead(
+                id=e.id,
+                task_id=e.task_id,
+                timestamp=e.timestamp.timestamp() if e.timestamp else 0,
+                level=e.level,
+                step=e.step,
+                message=e.message,
+            )
+            for e in entries
+        ]
     )
 
 

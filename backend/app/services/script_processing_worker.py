@@ -40,6 +40,7 @@ from app.services.studio.shot_extracted_dialogue_candidates import (
     sync_from_extraction_draft_sync as sync_shot_extracted_dialogue_candidates_from_draft_sync,
 )
 from app.services.studio.shot_semantic_defaults import apply_shot_semantic_defaults_from_draft_sync
+from app.services.worker.task_logging import write_task_log
 from app.services.worker.task_executor import (
     AbstractLLMResultGenerator,
     AbstractWorkerTaskExecutor,
@@ -156,7 +157,36 @@ class DivideTaskExecutor(AbstractWorkerTaskExecutor):
         self._generator = DivideResultGenerator()
 
     def execute(self, ctx: WorkerTaskContext, run_args: dict[str, Any]) -> ScriptDivisionResult:
-        return self._generator.generate(ctx.db, run_args)
+        result = self._generator.generate(ctx.db, run_args)
+        # 写入详细日志：分镜结果摘要
+        try:
+            write_task_log(
+                ctx.db,
+                task_id=ctx.task_id,
+                level="info",
+                message=f"分镜完成：共拆分为 {result.total_shots} 个镜头",
+                step="正在拆分镜头…",
+            )
+            for shot in result.shots[:5]:  # 只记录前5个镜头的名称
+                write_task_log(
+                    ctx.db,
+                    task_id=ctx.task_id,
+                    level="info",
+                    message=f"  镜头 {shot.index}: {shot.shot_name or '(未命名)'}",
+                    step="正在拆分镜头…",
+                )
+            if len(result.shots) > 5:
+                write_task_log(
+                    ctx.db,
+                    task_id=ctx.task_id,
+                    level="info",
+                    message=f"  ... 还有 {len(result.shots) - 5} 个镜头",
+                    step="正在拆分镜头…",
+                )
+            ctx.db.flush()
+        except Exception:
+            pass  # 日志写入失败不应影响主流程
+        return result
 
     def should_apply(self, ctx: WorkerTaskContext, run_args: dict[str, Any], result: ScriptDivisionResult) -> bool:  # noqa: ARG002
         return bool(run_args.get("write_to_db"))
