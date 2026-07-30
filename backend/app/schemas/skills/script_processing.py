@@ -15,7 +15,7 @@ SceneTimeLoose = Literal["DAY", "NIGHT", "DAWN", "DUSK", "UNKNOWN", "日", "夜"
 
 
 class ShotDivision(BaseModel):
-    """剧本分镜中的单镜信息：行号 + 预览文本（可选弱语义）。"""
+    """剧本分镜中的单镜信息：行号 + 预览文本 + 镜头语言描述。"""
 
     model_config = ConfigDict(extra="forbid")
 
@@ -26,6 +26,24 @@ class ShotDivision(BaseModel):
 
     shot_name: str = Field("", description="镜头名称（分镜名/镜头标题）")
     time_of_day: Optional[SceneTimeLoose] = Field(None, description="时间（日/夜/未知等，可选）")
+
+    # ---- 丰富镜头语言字段（可选，由 LLM 在分镜时推断） ----
+    description: str = Field("", description="镜头画面描述：描述观众会看到的画面内容（<=100字）")
+    camera_shot: Optional[str] = Field(
+        None,
+        description="景别建议：ECU(大特写)/CU(特写)/MCU(中近景)/MS(中景)/MLS(中远景)/LS(远景)/ELS(大远景)",
+    )
+    camera_angle: Optional[str] = Field(
+        None,
+        description="机位角度：EYE_LEVEL(平视)/HIGH_ANGLE(俯拍)/LOW_ANGLE(仰拍)/BIRD_EYE(鸟瞰)/DUTCH(荷兰角)/OVER_SHOULDER(过肩)",
+    )
+    camera_movement: Optional[str] = Field(
+        None,
+        description="运镜方式：STATIC(固定)/PAN(平移)/TILT(倾斜)/DOLLY_IN(推)/DOLLY_OUT(拉)/TRACK(轨道)/CRANE(摇臂)/HANDHELD(手持)",
+    )
+    duration: Optional[int] = Field(None, ge=1, le=60, description="建议时长（秒），1-60")
+    mood_tags: List[str] = Field(default_factory=list, description="情绪标签（如：紧张、温馨、悲伤）")
+    atmosphere: str = Field("", description="氛围描述：光线、色调、声音等环境氛围（<=80字）")
 
 
 class ScriptDivisionResult(BaseModel):

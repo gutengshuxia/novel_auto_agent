@@ -14,6 +14,30 @@ from app.schemas.skills.script_processing import ScriptDivisionResult
 from app.services.common import entity_not_found, require_entity
 
 
+def _safe_camera_shot(val: str | None) -> CameraShotType:
+    """将 LLM 输出的景别字符串安全映射为枚举值。"""
+    if not val:
+        return CameraShotType.ms
+    mapping = {v.value.upper(): v for v in CameraShotType}
+    return mapping.get(val.upper().strip(), CameraShotType.ms)
+
+
+def _safe_camera_angle(val: str | None) -> CameraAngle:
+    """将 LLM 输出的机位字符串安全映射为枚举值。"""
+    if not val:
+        return CameraAngle.eye_level
+    mapping = {v.value.upper(): v for v in CameraAngle}
+    return mapping.get(val.upper().strip(), CameraAngle.eye_level)
+
+
+def _safe_camera_movement(val: str | None) -> CameraMovement:
+    """将 LLM 输出的运镜字符串安全映射为枚举值。"""
+    if not val:
+        return CameraMovement.static
+    mapping = {v.value.upper(): v for v in CameraMovement}
+    return mapping.get(val.upper().strip(), CameraMovement.static)
+
+
 def _append_division_rows(
     db_add,
     *,
@@ -35,12 +59,15 @@ def _append_division_rows(
         db_add(
             ShotDetail(
                 id=shot_id,
-                camera_shot=CameraShotType.ms,
-                angle=CameraAngle.eye_level,
-                movement=CameraMovement.static,
+                camera_shot=_safe_camera_shot(shot_division.camera_shot),
+                angle=_safe_camera_angle(shot_division.camera_angle),
+                movement=_safe_camera_movement(shot_division.camera_movement),
+                description=shot_division.description or "",
+                duration=shot_division.duration or 4,
+                mood_tags=shot_division.mood_tags or [],
+                atmosphere=shot_division.atmosphere or "",
                 follow_atmosphere=True,
                 vfx_type=VFXType.none,
-                duration=4,
             )
         )
 

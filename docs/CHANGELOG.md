@@ -4,6 +4,31 @@
 
 ---
 
+## [2026-07-29] 分镜提取增强：丰富镜头语言 + 按情节智能拆分
+
+### 问题描述
+
+1. **分镜列表只有剧本摘录**：分镜提取后 ShotDetail 全部使用默认值（static 机位、eye_level、ms 景别），没有画面描述、运镜、氛围等信息
+2. **按回车/句号拆分而非按情节**：原 system prompt 过于简短，LLM 默认按段落边界切分
+
+### 修改内容
+
+- **ShotDivision schema 增强**（`backend/app/schemas/skills/script_processing.py`）
+  - 新增可选字段：`description`（画面描述）、`camera_shot`（景别）、`camera_angle`（机位）、`camera_movement`（运镜）、`duration`（时长）、`mood_tags`（情绪标签）、`atmosphere`（氛围）
+  - 所有新字段均为可选，向后兼容旧数据
+
+- **ScriptDividerAgent prompt 增强**（`backend/app/chains/agents/script_divider_agent.py`）
+  - 明确"禁止按段落/标点拆分"规则
+  - 要求每个镜头必须提供：画面描述、景别、机位、运镜、时长、情绪标签、氛围
+  - 给出镜头语言推断指引（对话→CU/MCU，动作→MS/MLS，环境→LS/ELS）
+
+- **写库逻辑升级**（`backend/app/services/studio/script_division.py`）
+  - 新增 `_safe_camera_shot` / `_safe_camera_angle` / `_safe_camera_movement` 安全映射函数
+  - `_append_division_rows` 现在使用 LLM 输出的丰富数据填充 ShotDetail（description、duration、mood_tags、atmosphere 等）
+  - 无法识别的枚举值安全降级为默认值
+
+---
+
 ## [2026-07-29] 更新 README 文件
 
 ### 修改内容
