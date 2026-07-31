@@ -1,6 +1,9 @@
 """FastAPI 应用入口。"""
 
+import logging
+import sys
 from contextlib import asynccontextmanager
+import time
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
@@ -11,6 +14,22 @@ from app.api.v1 import router as api_v1_router
 from app.bootstrap import bootstrap_all_registries
 from app.config import settings
 from app.schemas.common import ApiResponse
+
+# 日志配置：显示应用层日志 + 耗时
+LOG_FORMAT = "%(asctime)s | %(levelname)-7s | %(name)s:%(lineno)d | %(message)s"
+logging.basicConfig(
+    level=logging.INFO,
+    format=LOG_FORMAT,
+    datefmt="%H:%M:%S",
+    stream=sys.stdout,
+)
+# 抑制第三方库的 DEBUG 噪音
+logging.getLogger("sqlalchemy.engine").setLevel(logging.WARNING)
+logging.getLogger("httpx").setLevel(logging.WARNING)
+logging.getLogger("httpcore").setLevel(logging.WARNING)
+logging.getLogger("watchfiles").setLevel(logging.WARNING)
+# 应用自身的日志设为 DEBUG 以便看到更多细节
+logging.getLogger("app").setLevel(logging.DEBUG)
 
 
 def _error_message(detail: object) -> str:
@@ -74,6 +93,22 @@ app = FastAPI(
 app.add_exception_handler(RequestValidationError, validation_exception_handler)
 app.add_exception_handler(HTTPException, http_exception_handler)
 app.add_exception_handler(Exception, http_exception_handler)
+
+# 请求耗时中间件
+@app.middleware("http")
+async def log_request_timing(request: Request, call_next):
+    start = time.time()
+    response = await call_next(request)
+    duration_ms = (time.time() - start) * 1000
+    logger = logging.getLogger("app.request")
+    logger.info(
+        "%s %s → %s (%.0fms)",
+        request.method,
+        request.url.path + ("?" + request.url.query if request.url.query else ""),
+        response.status_code,
+        duration_ms,
+    )
+    return response
 
 app.add_middleware(
     CORSMiddleware,
