@@ -205,7 +205,9 @@ class NovelCodexBridge:
 
     async def _load_chapter_data(self, db: AsyncSession, chapter_id: str) -> dict[str, Any] | None:
         """从 DB 加载章节相关数据。"""
-        chapter = await db.get(Chapter, chapter_id)
+        chapter_stmt = select(Chapter).options(selectinload(Chapter.project)).where(Chapter.id == chapter_id)
+        result = await db.execute(chapter_stmt)
+        chapter = result.scalar_one_or_none()
         if not chapter:
             return None
 
