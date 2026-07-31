@@ -258,7 +258,7 @@ async def run_full_prompt_pipeline(
 
             # Step 2: 时间戳 Prompt 生成
             log_task_event("full_prompt_pipeline", task_id, "running", step="生成时间戳 Prompt")
-            await store.set_progress(task_id, 40)
+            await store.set_progress(task_id, 40); await store.set_current_step(task_id, '???????????Prompt...')
             await session.commit()
 
             from app.chains.agents.timestamp_prompt_agent import MODEL_STYLE_GUIDE
@@ -299,7 +299,7 @@ async def run_full_prompt_pipeline(
 
             # Step 3: 一致性审计
             log_task_event("full_prompt_pipeline", task_id, "running", step="一致性审计")
-            await store.set_progress(task_id, 65)
+            await store.set_progress(task_id, 65); await store.set_current_step(task_id, 'Prompt??????????????...')
             await session.commit()
 
             audit_llm = await session.run_sync(lambda sync_db: build_default_text_llm_sync(sync_db, thinking=False))
@@ -339,7 +339,7 @@ async def run_full_prompt_pipeline(
 
             # Step 4: 模型适配
             log_task_event("full_prompt_pipeline", task_id, "running", step=f"模型适配：{target_model}")
-            await store.set_progress(task_id, 85)
+            await store.set_progress(task_id, 85); await store.set_current_step(task_id, '?????????????...')
             await session.commit()
 
             adapt_agent = ModelAdapterAgent()
@@ -379,7 +379,7 @@ async def run_full_prompt_pipeline(
             if await cancel_if_requested_async(store=store, task_id=task_id, session=session):
                 return
 
-            await store.set_progress(task_id, 100)
+            await store.set_progress(task_id, 100); await store.set_current_step(task_id, 'Pipeline????')
             await store.set_status(task_id, TaskStatus.succeeded)
             await recompute_shot_status(session, shot_id=shot_id)
             await session.commit()
