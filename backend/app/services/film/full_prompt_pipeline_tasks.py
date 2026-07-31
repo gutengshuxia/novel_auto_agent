@@ -368,6 +368,7 @@ async def run_full_prompt_pipeline(
                 "audit_score": audit_result.overall_score,
                 "audit_passed": audit_result.passed,
                 "audit_issues": audit_result.issues,
+                "retry_count": retry_count,
                 "adapt_notes": adapt_result.notes,
                 "subject_analysis": beat_result.subject_analysis,
                 "sound_design": beat_result.sound_design,
@@ -395,3 +396,223 @@ async def run_full_prompt_pipeline(
                     await recompute_shot_status(s2, shot_id=shot_id)
                 await s2.commit()
             log_task_failure("full_prompt_pipeline", task_id, str(exc))
+
+
+# ---- ?? Pipeline ----
+
+
+async def run_batch_pipeline(task_id: str, run_args: dict[str, Any]) -> None:
+    """???????????????? Pipeline?
+
+    run_args:
+        chapter_id: str  -- ?? ID
+        target_model: str -- ????
+    """
+    chapter_id = run_args.get("chapter_id")
+    target_model = run_args.get("target_model", "??")
+
+    async with async_session_maker() as session:
+        store = SqlAlchemyTaskStore(session)
+        try:
+            log_task_event("batch_pipeline", task_id, "running", step=f"???? Pipeline???={chapter_id} ??={target_model}")
+
+            # ????????
+            shot_stmt = (
+                select(Shot)
+                .options(selectinload(Shot.detail))
+                .where(Shot.chapter_id == chapter_id)
+                .order_by(Shot.index)
+            )
+            shots = (await session.execute(shot_stmt)).scalars().all()
+
+            if not shots:
+                await store.set_status(task_id, TaskStatus.failed)
+                await store.set_error(task_id, f"?? {chapter_id} ????")
+                await session.commit()
+                return
+
+            total = len(shots)
+            log_task_event("batch_pipeline", task_id, "running", step=f"? {total} ??????")
+            await store.set_progress(task_id, 5)
+            await session.commit()
+
+            results: list[dict[str, Any]] = []
+            for idx, shot in enumerate(shots):
+                if await cancel_if_requested_async(store=store, task_id=task_id, session=session):
+                    return
+
+                shot_id = str(shot.id)
+                progress = 5 + int(90 * (idx + 1) / total)
+                await store.set_progress(task_id, progress)
+                log_task_event("batch_pipeline", task_id, "running",
+                              step=f"???? {idx + 1}/{total}?{shot.title or shot_id}")
+
+                # ????????? Pipeline
+                try:
+                    await _run_single_pipeline_core(
+                        task_id=task_id,
+                        shot_id=shot_id,
+                        target_model=target_model,
+                        store=store,
+                        session=session,
+                    )
+                    results.append({"shot_id": shot_id, "status": "succeeded"})
+                except Exception as e:
+                    results.append({"shot_id": shot_id, "status": "failed", "error": str(e)})
+                    log_task_event("batch_pipeline", task_id, "running",
+                                  step=f"?? {shot_id} ???{e}")
+
+            succeeded = sum(1 for r in results if r["status"] == "succeeded")
+            failed = sum(1 for r in results if r["status"] == "failed")
+
+            await store.set_progress(task_id, 100)
+            await store.set_result(task_id, {
+                "total": total,
+                "succeeded": succeeded,
+                "failed": failed,
+                "results": results,
+                "target_model": target_model,
+                "chapter_id": chapter_id,
+            })
+            await store.set_status(task_id, TaskStatus.succeeded)
+            await session.commit()
+            log_task_event("batch_pipeline", task_id, "succeeded",
+                          step=f"?? Pipeline ???{succeeded}/{total} ??")
+
+        except Exception as exc:
+            await session.rollback()
+            async with async_session_maker() as s2:
+                store2 = SqlAlchemyTaskStore(s2)
+                await store2.set_error(task_id, str(exc))
+                await store2.set_status(task_id, TaskStatus.failed)
+                await s2.commit()
+            log_task_failure("batch_pipeline", task_id, str(exc))
+
+
+async def _run_single_pipeline_core(
+    task_id: str,
+    shot_id: str,
+    target_model: str,
+    store: SqlAlchemyTaskStore,
+    session: AsyncSession,
+) -> None:
+    """????????? Pipeline ??????????????"""
+    from app.chains.agents.timestamp_prompt_agent import MODEL_STYLE_GUIDE
+
+    ctx = await _load_shot_context(session, shot_id)
+    shot_stmt = (
+        select(Shot)
+        .options(selectinload(Shot.detail))
+        .where(Shot.id == shot_id)
+    )
+    shot = (await session.execute(shot_stmt)).scalar_one_or_none()
+    if shot is None or shot.detail is None:
+        raise RuntimeError(f"Shot not found: {shot_id}")
+    detail = shot.detail
+
+    llm = await session.run_sync(lambda sync_db: build_default_text_llm_sync(sync_db, thinking=False))
+
+    # Step 1: Beat ??
+    planner = BeatPlanningAgent(llm)
+    beat_result = await planner.aextract(
+        script_excerpt=shot.script_excerpt or "",
+        title=shot.title or "",
+        camera_shot=_enum_value(detail.camera_shot),
+        angle=_enum_value(detail.angle),
+        movement=_enum_value(detail.movement),
+        atmosphere=detail.atmosphere or "",
+        duration=detail.duration,
+        character_context=ctx["character_context"],
+        scene_context=ctx["scene_context"],
+        prop_context=ctx["prop_context"],
+        costume_context=ctx["costume_context"],
+    )
+    beat_count = len(beat_result.beats)
+
+    # Format beat sequence
+    beat_text_lines = []
+    for b in beat_result.beats:
+        line = f"[{b.start_time}-{b.end_time}s] {b.action}"
+        if b.character:
+            line += f"?{b.character}?"
+        beat_text_lines.append(line)
+    beat_sequence = "\n".join(beat_text_lines)
+
+    # Step 2: Timestamp Prompt
+    style_guide = MODEL_STYLE_GUIDE.get(target_model.lower(), "????????? Prompt ??")
+    char_names_at = "?".join(f"@{name}" for name in ctx["character_names"]) if ctx["character_names"] else "?"
+
+    prompt_agent = TimestampPromptAgent(llm)
+    prompt_result = await prompt_agent.aextract(
+        target_model=target_model,
+        style_guide=style_guide,
+        character_names_at=char_names_at,
+        script_excerpt=shot.script_excerpt or "",
+        title=shot.title or "",
+        camera_shot=_enum_value(detail.camera_shot),
+        angle=_enum_value(detail.angle),
+        movement=_enum_value(detail.movement),
+        atmosphere=detail.atmosphere or "",
+        duration=detail.duration,
+        beat_sequence=beat_sequence,
+        sound_design=beat_result.sound_design,
+        subject_analysis=beat_result.subject_analysis,
+        character_context=ctx["character_context"],
+        scene_context=ctx["scene_context"],
+        prop_context=ctx["prop_context"],
+        costume_context=ctx["costume_context"],
+        previous_shot_title=ctx["previous_shot_title"],
+        previous_shot_end_state=ctx["previous_shot_end_state"],
+        next_shot_title=ctx["next_shot_title"],
+        next_shot_start_goal=ctx["next_shot_start_goal"],
+        director_command_summary=ctx["director_command_summary"],
+    )
+
+    # Step 3: Consistency Audit
+    audit_llm = await session.run_sync(lambda sync_db: build_default_text_llm_sync(sync_db, thinking=False))
+    audit_agent = PromptConsistencyAgent(audit_llm)
+    audit_result = await audit_agent.aextract(
+        character_context=ctx["character_context"],
+        scene_context=ctx["scene_context"],
+        prop_context=ctx["prop_context"],
+        costume_context=ctx["costume_context"],
+        script_excerpt=shot.script_excerpt or "",
+        title=shot.title or "",
+        camera_shot=_enum_value(detail.camera_shot),
+        angle=_enum_value(detail.angle),
+        movement=_enum_value(detail.movement),
+        atmosphere=detail.atmosphere or "",
+        duration=detail.duration,
+        previous_shot_title=ctx["previous_shot_title"],
+        previous_shot_end_state=ctx["previous_shot_end_state"],
+        next_shot_title=ctx["next_shot_title"],
+        next_shot_start_goal=ctx["next_shot_start_goal"],
+        prompt_text=prompt_result.prompt_text,
+        negative_prompt=prompt_result.negative_prompt,
+    )
+
+    final_prompt = prompt_result.prompt_text
+    final_negative = prompt_result.negative_prompt
+    if not audit_result.passed and audit_result.optimized_prompt:
+        final_prompt = audit_result.optimized_prompt
+
+    # Step 4: Model Adaptation
+    adapt_agent = ModelAdapterAgent()
+    adapt_result = adapt_agent.extract(
+        prompt_text=final_prompt,
+        target_model=target_model,
+        camera=_enum_value(detail.movement),
+        negative_prompt=final_negative,
+    )
+
+    # Write to DB
+    shot_detail = await session.get(ShotDetail, shot_id)
+    if shot_detail is None:
+        raise RuntimeError(f"ShotDetail not found: {shot_id}")
+
+    shot_detail.first_frame_prompt = adapt_result.prompt_text
+    shot_detail.key_frame_prompt = adapt_result.prompt_text
+    shot_detail.last_frame_prompt = adapt_result.prompt_text
+
+    await recompute_shot_status(session, shot_id=shot_id)
+    await session.commit()

@@ -64,6 +64,17 @@ def _optimize_pixverse(text: str) -> str:
     """PixVerse：简洁描述优先。"""
     return text
 
+def _optimize_sora(text: str) -> str:
+    """Sora??????????????????????"""
+    return text + ", photorealistic, natural physics, coherent motion, cinematic"
+
+
+def _optimize_hailuo(text: str) -> str:
+    """Hailuo??????????????????"""
+    if len(text) < 80:
+        return text + "????????????????????"
+    return text + "????"
+
 
 _OPTIMIZERS = {
     "kling": _optimize_kling,
@@ -71,6 +82,8 @@ _OPTIMIZERS = {
     "veo": _optimize_veo,
     "runway": _optimize_runway,
     "pixverse": _optimize_pixverse,
+    "sora": _optimize_sora,
+    "hailuo": _optimize_hailuo,
 }
 
 

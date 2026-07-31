@@ -110,6 +110,7 @@ import NovelCodexPanel from './components/NovelCodexPanel'
 import { ChapterStudioMaintenancePanel } from './components/ChapterStudioMaintenancePanel'
 import { ChapterStudioReadinessDiagnosisPanel } from './components/ChapterStudioReadinessDiagnosisPanel'
 import { ChapterStudioVideoReadinessPanel } from './components/ChapterStudioVideoReadinessPanel'
+import PipelineProgressContent from './components/PipelineProgressModal'
 import { useGenerationDraft, type GenerationDraftState } from '../hooks/useGenerationDraft'
 import { useTaskPageContext } from '../components/taskPageContext'
 import type { RelationTaskState } from '../project/ProjectWorkbench/chapterDivisionTasks'
@@ -3026,7 +3027,8 @@ function Inspector(props: {
   const opsNoteSaveTimerRef = useRef<number | null>(null)
   const [keyframePromptPreviewOpen, setKeyframePromptPreviewOpen] = useState(false)
   const [keyframePromptPreviewLoading, setKeyframePromptPreviewLoading] = useState(false)
-  const [keyframePromptActionLoading, setKeyframePromptActionLoading] = useState(false)
+ const [keyframePromptActionLoading, setKeyframePromptActionLoading] = useState(false)
+  const [pipelineTargetModel, setPipelineTargetModel] = useState<string>('通用')
   const [keyframePromptPreviewFrameType, setKeyframePromptPreviewFrameType] = useState<PromptFrameType>('key')
   const [keyframePromptDebugContext, setKeyframePromptDebugContext] = useState<ShotFramePromptDebugContext | null>(null)
   const [keyframePromptDebugCollapsed, setKeyframePromptDebugCollapsed] = useState(true)
@@ -5786,12 +5788,12 @@ function Inspector(props: {
                           const res = await fetch('/api/v1/film/tasks/full-prompt-pipeline', {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({ shot_id: selectedShot.id, target_model: '通用' }),
+                            body: JSON.stringify({ shot_id: selectedShot.id, target_model: pipelineTargetModel }),
                           })
                           const json = await res.json()
                           const taskId = json?.data?.task_id
                           if (!taskId) { message.error('Pipeline 任务创建失败'); return }
-                          message.loading({ content: '完整 Pipeline 执行中（Beat规划→Prompt→审计→适配）...', key: 'pipeline', duration: 0 })
+                          message.loading({ content: `完整 Pipeline 执行中（Beat规划→Prompt→审计→${pipelineTargetModel}适配）...`, key: 'pipeline', duration: 0 })
                           for (let i = 0; i < 60; i++) {
                             await sleep(2000)
                             const sr = await FilmService.getTaskStatusApiV1FilmTasksTaskIdStatusGet({ taskId })
@@ -5820,6 +5822,38 @@ function Inspector(props: {
                       完整Pipeline
                     </Button>
                   </Space>
+                </div>
+                  {/* Pipeline Progress Modal */}
+                  <Modal
+                    title="Pipeline ????"
+                    open={pipelineProgressOpen}
+                    footer={null}
+                    closable={pipelineStatus !== 'running'}
+                    maskClosable={false}
+                    width={640}
+                    onCancel={() => { if (pipelineStatus !== 'running') { setPipelineProgressOpen(false); setPipelineTaskId(''); setPipelineResult(null) } }}
+                    afterClose={() => { setPipelineTaskId(''); setPipelineResult(null) }}
+                  >
+                    <PipelineProgressContent
+                      taskId={pipelineTaskId}
+                      progress={pipelineProgress}
+                      setProgress={setPipelineProgress}
+                      currentStep={pipelineCurrentStep}
+                      setCurrentStep={setPipelineCurrentStep}
+                      status={pipelineStatus}
+                      setStatus={setPipelineStatus}
+                      result={pipelineResult}
+                      setResult={setPipelineResult}
+                      originalPrompt={keyframePromptPreviewDraft}
+                      onComplete={async (d: any) => {
+                        if (d?.key_frame_prompt) {
+                          onPatchShotDetail({ key_frame_prompt: d.key_frame_prompt })
+                          keyframePromptDraft.replaceBase({ frameType: keyframePromptPreviewFrameType, prompt: d.key_frame_prompt })
+                        }
+                        message.success('Pipeline ?????????')
+                      }}
+                    />
+                  </Modal>
                 </div>
                 {!hasBasePrompt ? (
                   <div className="mb-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-700">
