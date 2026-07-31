@@ -5854,7 +5854,6 @@ function Inspector(props: {
                       }}
                     />
                   </Modal>
-                </div>
                 {!hasBasePrompt ? (
                   <div className="mb-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-700">
                     当前还没有基础提示词。你可以先让 AI 生成一版，再按需修改；也可以直接手动输入。
