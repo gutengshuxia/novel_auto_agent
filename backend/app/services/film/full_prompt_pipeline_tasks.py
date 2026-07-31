@@ -289,6 +289,7 @@ async def run_full_prompt_pipeline(
                 next_shot_title=ctx["next_shot_title"],
                 next_shot_start_goal=ctx["next_shot_start_goal"],
                 director_command_summary=ctx["director_command_summary"],
+                intensity_guide=intensity_guide,
             )
             log_task_event("full_prompt_pipeline", task_id, "running",
                           step=f"Prompt 生成完成：{len(prompt_result.prompt_text)} 字符")

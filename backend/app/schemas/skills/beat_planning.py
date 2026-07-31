@@ -8,7 +8,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 
 class Beat(BaseModel):
-    """单个 Beat（时间戳动作单元）。"""
+    """单个 Beat（时间戳动作单元，含强度、摄影指令和 VFX 建议）。"""
 
     model_config = ConfigDict(extra="forbid")
 
@@ -16,11 +16,14 @@ class Beat(BaseModel):
     start_time: float = Field(..., ge=0, description="起始时间（秒）")
     end_time: float = Field(..., ge=0, description="结束时间（秒）")
     action: str = Field(..., description="动作描述（行为化，禁止抽象情感词）")
+    intensity: str = Field("mid", description="强度等级：low/mid/high/peak")
     character: str = Field("", description="角色名（@引用）")
+    camera_instruction: str = Field("", description="本 Beat 摄影机运动建议")
     micro_expression: str = Field("", description="微表情（可见肌肉动作）")
     gaze: str = Field("", description="眼神方向")
     body_language: str = Field("", description="肢体动作")
     env_change: str = Field("", description="环境变化")
+    vfx_emphasis: str = Field("", description="元素能量效果建议")
     dialogue: str = Field("", description="本 Beat 对白（可空）")
 
 
@@ -30,6 +33,8 @@ class BeatPlanResult(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     subject_analysis: str = Field("", description="一句话描述主体 (who/where/what/expression)")
+    action_philosophy: str = Field("", description="动作风格概括（如：爆发式藏式功夫）")
+    intensity_arc: str = Field("", description="强度递进模式（如：low→mid→high→peak）")
     beats: List[Beat] = Field(default_factory=list, description="Beat 序列")
     sound_design: str = Field("", description="声音设计（环境音+关键音效，1句话）")
     prompt_strategy: str = Field("B", description="Prompt 策略：A(导演脚本版)/B(AI执行版)/C(导演调度版)")

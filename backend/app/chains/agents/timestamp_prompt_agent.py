@@ -180,7 +180,7 @@ class TimestampPromptAgent(AgentBase[TimestampPromptResult]):
                 "prop_context", "costume_context",
                 "previous_shot_title", "previous_shot_end_state",
                 "next_shot_title", "next_shot_start_goal",
-                "director_command_summary",
+                "director_command_summary", "intensity_guide",
             ],
             template=_TIMESTAMP_TEMPLATE,
         )
