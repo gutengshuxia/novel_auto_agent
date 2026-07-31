@@ -169,6 +169,7 @@ export default function PipelineProgressContent({
                 ))}
               </ul>
             </div>
+          )}
 
           {/* Before/After comparison */}
           {originalPrompt && r?.prompt_text && (
